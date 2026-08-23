@@ -15,6 +15,6 @@ export interface HuoEntry {
   judgment: string
   tag: Tag
   createdAt: number
-  /** 可选：配图在 IndexedDB 里的 id（拍照/选图录入） */
+  /** 可选：配图在 Supabase Storage 里的路径（拍照/选图录入） */
   imageId?: string
 }

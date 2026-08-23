@@ -5,7 +5,8 @@ import { TAGS, type Tag, type HuoEntry } from '../types'
 import { todayStr } from '../utils/storage'
 import { saveEntry } from '../services/dataService'
 import { callCoach } from '../services/coachService'
-import { compressImage, deleteImage, saveImage } from '../utils/imageStore'
+import { compressImage } from '../utils/imageStore'
+import { uploadImage } from '../services/imageService'
 
 export default function RecordPage() {
   const navigate = useNavigate()
@@ -22,7 +23,7 @@ export default function RecordPage() {
   const [clicheResult, setClicheResult] = useState('')
   const [clicheError, setClicheError] = useState('')
 
-  const [imageId, setImageId] = useState<string | undefined>()
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null)
   const [imageUrl, setImageUrl] = useState<string | undefined>()
   const [imageError, setImageError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -67,11 +68,8 @@ export default function RecordPage() {
     setImageError('')
     try {
       const blob = await compressImage(file)
-      const id = crypto.randomUUID()
-      await saveImage(id, blob)
-      if (imageId) deleteImage(imageId).catch(() => {})
       if (imageUrl) URL.revokeObjectURL(imageUrl)
-      setImageId(id)
+      setImageBlob(blob)
       setImageUrl(URL.createObjectURL(blob))
     } catch (err) {
       setImageError(err instanceof Error ? err.message : '图片处理失败')
@@ -79,9 +77,8 @@ export default function RecordPage() {
   }
 
   const removeImage = () => {
-    if (imageId) deleteImage(imageId).catch(() => {})
     if (imageUrl) URL.revokeObjectURL(imageUrl)
-    setImageId(undefined)
+    setImageBlob(null)
     setImageUrl(undefined)
   }
 
@@ -90,6 +87,11 @@ export default function RecordPage() {
     setSaving(true)
     setSaveError('')
     try {
+      // 先传图（有图才传），拿到 Storage 路径；失败则整体中止，保证数据一致
+      let imagePath: string | undefined
+      if (imageBlob) {
+        imagePath = await uploadImage(imageBlob)
+      }
       const entry: HuoEntry = {
         id: crypto.randomUUID(),
         date: todayStr(),
@@ -98,7 +100,7 @@ export default function RecordPage() {
         judgment: judgment.trim(),
         tag,
         createdAt: Date.now(),
-        imageId,
+        imageId: imagePath,
       }
       await saveEntry(entry)
       navigate('/library')

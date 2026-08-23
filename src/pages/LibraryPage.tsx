@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, Trash2 } from 'lucide-react'
 import { TAGS, type Tag } from '../types'
 import { formatDate } from '../utils/storage'
-import { deleteImage, loadImage } from '../utils/imageStore'
+import { deleteImage, getSignedUrl } from '../services/imageService'
 import { deleteEntry } from '../services/dataService'
 import { useEntries } from '../hooks/useEntries'
 import SetupGuide from '../components/SetupGuide'
@@ -13,9 +13,9 @@ function EntryImage({ imageId }: { imageId: string }) {
 
   useEffect(() => {
     let alive = true
-    loadImage(imageId)
-      .then((blob) => {
-        if (alive && blob) setUrl(URL.createObjectURL(blob))
+    getSignedUrl(imageId)
+      .then((u) => {
+        if (alive && u) setUrl(u)
       })
       .catch(() => {})
     return () => {
