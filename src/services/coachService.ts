@@ -1,5 +1,5 @@
-// AI 教练调用封装
-// 部署后走 /api/coach（Vercel 同域名）；本地开发时该路由不存在，会抛错由页面降级提示。
+// AI 教练调用（费曼式：前端直连，key 存浏览器 localStorage，用户自己填）
+// 产品里没有"公共 key"，每个使用者花各自的额度，天然隔离。
 
 export type CoachMode = 'dig' | 'cliche'
 
@@ -9,21 +9,152 @@ export interface CoachPayload {
   judgment?: string
 }
 
+export interface ApiConfig {
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+const CONFIG_KEY = 'biaodaxunlian:api-config'
+
+export const DEFAULT_CONFIG: ApiConfig = {
+  baseUrl: 'https://api.deepseek.com/v1',
+  apiKey: '',
+  model: 'deepseek-chat',
+}
+
+// ── 教练式提示词 ──
+// 核心原则：只追问、只给方向，绝不替用户思考、绝不代答。
+
+const DIG_SYSTEM = `你是「货库」的表达训练教练。用户正在做一件事：把当天一件真实小事，挖成一句属于自己的判断。
+
+用户已经写了「发生了什么」，但卡在「我怎么想」写不下去。
+
+你的任务：基于他写的内容，追问一个具体的「为什么」，帮他往下挖一层。
+
+硬性要求：
+1. 只输出一个追问，25 字以内，必须是问句
+2. 追问必须具体——针对他写的那件具体的事，禁止泛泛的「你为什么这么想」「你当时什么感受」
+3. 绝不替他回答，绝不给出你的判断、观点或「更好的说法」
+4. 如果他写的「发生了什么」本身很空洞（没有具体的人、事、细节），先追问让他补充细节
+5. 只输出追问本身，不加任何前缀、解释、引号`
+
+const CLICHE_SYSTEM = `你是「货库」的表达训练教练。用户刚写了「一句话判断」——即他对某件事自己的看法。
+
+你的任务：判断这句话是他自己的具体判断，还是「套话」（别人说烂的、没有他个人视角的通用道理）。
+
+判断标准：
+- 套话特征：名言警句、鸡汤（如「坚持就是胜利」「一日之计在于晨」）、正确的废话、没有具体内容
+- 自己的判断特征：有具体对象、有个人视角、能看出是他真实经历得出的
+
+输出要求：
+1. 只输出一句话反馈，30 字以内
+2. 如果是套话 → 直接指出并追问：「这是套话，你对这件事的具体判断是什么？」
+3. 如果确实是自己的判断 → 简短肯定一句（如「有你的视角」），不啰嗦
+4. 不加任何前缀、解释、引号`
+
+export function loadApiConfig(): ApiConfig {
+  try {
+    const raw = localStorage.getItem(CONFIG_KEY)
+    if (raw) return { ...DEFAULT_CONFIG, ...JSON.parse(raw) }
+  } catch {
+    /* 解析失败用默认值 */
+  }
+  return DEFAULT_CONFIG
+}
+
+export function saveApiConfig(config: ApiConfig): void {
+  try {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
+  } catch {
+    /* 静默降级 */
+  }
+}
+
+export function hasApiKey(): boolean {
+  return loadApiConfig().apiKey.trim() !== ''
+}
+
+function buildRequest(mode: CoachMode, payload: CoachPayload, config: ApiConfig) {
+  let system: string
+  let user: string
+  if (mode === 'dig') {
+    system = DIG_SYSTEM
+    user = `发生了什么：${payload.happened || ''}\n已经写的「我怎么想」：${payload.thought || '（还没写）'}`
+  } else {
+    system = CLICHE_SYSTEM
+    user = `一句话判断：${payload.judgment || ''}`
+  }
+  const base = config.baseUrl.trim().replace(/\/+$/, '')
+  return {
+    url: `${base}/chat/completions`,
+    body: {
+      model: config.model.trim(),
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      max_tokens: 80,
+      temperature: 0.7,
+    },
+  }
+}
+
 export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise<string> {
-  const resp = await fetch('/api/coach', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode, ...payload }),
-  })
+  const config = loadApiConfig()
+  if (!config.apiKey.trim()) {
+    throw new Error('还没配置 API Key，请先到设置里填写')
+  }
+  const { url, body } = buildRequest(mode, payload, config)
+
+  let resp: Response
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey.trim()}`,
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    throw new Error('网络请求失败，请检查 Base URL 是否正确')
+  }
 
   if (!resp.ok) {
-    throw new Error(`服务异常（${resp.status}）`)
+    const err = await resp.text().catch(() => '')
+    if (resp.status === 401 || resp.status === 403) throw new Error('API Key 无效，请检查')
+    throw new Error(`调用失败（${resp.status}）${err.slice(0, 80)}`)
   }
 
   const data = await resp.json()
-  if (!data.ok) {
-    throw new Error(data.error || '调用失败')
-  }
+  const content = (data.choices?.[0]?.message?.content || '').trim()
+  if (!content) throw new Error('AI 返回为空')
+  return content
+}
 
-  return mode === 'dig' ? data.question : data.feedback
+/** 测试连接：发一条最小请求验证配置是否可用 */
+export async function testApiConfig(config: ApiConfig): Promise<string> {
+  const base = config.baseUrl.trim().replace(/\/+$/, '')
+  if (!base) return '请填写 Base URL'
+  if (!config.apiKey.trim()) return '请填写 API Key'
+  try {
+    const resp = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey.trim()}`,
+      },
+      body: JSON.stringify({
+        model: config.model.trim(),
+        messages: [{ role: 'user', content: '回复：OK' }],
+        max_tokens: 5,
+      }),
+    })
+    if (resp.ok) return '连接成功'
+    if (resp.status === 401 || resp.status === 403) return 'API Key 无效'
+    return `连接失败（${resp.status}）`
+  } catch {
+    return '网络错误，请检查 Base URL'
+  }
 }

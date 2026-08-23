@@ -150,7 +150,7 @@ export default function RecordPage() {
               <Sparkles size={16} /> {digLoading ? 'AI 正在想…' : 'AI 帮我挖'}
             </button>
             {digResult && <p className="coach-result">{digResult}</p>}
-            {digError && <p className="coach-error">{digError}（AI 教练需部署后使用，本地可先手动练）</p>}
+            {digError && <p className="coach-error">{digError}</p>}
           </div>
         )}
 

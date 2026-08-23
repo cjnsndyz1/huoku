@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
 import { useMemo } from 'react'
-import { Feather, Library, CalendarCheck, TrendingUp, Trophy } from 'lucide-react'
+import { Feather, Library, CalendarCheck, TrendingUp, Trophy, Settings } from 'lucide-react'
 import { loadHistory } from '../utils/storage'
 import { computeStats, streakText } from '../utils/stats'
+import { hasApiKey } from '../services/coachService'
 
 const MILESTONES = [100, 50, 10]
 
@@ -49,6 +50,11 @@ export default function HomePage() {
           <small>打卡与统计</small>
         </Link>
       </div>
+
+      <Link to="/settings" className="settings-link">
+        <Settings size={14} />
+        {hasApiKey() ? 'AI 已配置' : '配置 AI（填 API Key）'}
+      </Link>
     </div>
   )
 }

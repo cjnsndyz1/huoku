@@ -4,6 +4,7 @@ import RecordPage from './pages/RecordPage'
 import LibraryPage from './pages/LibraryPage'
 import ReviewPage from './pages/ReviewPage'
 import ProgressPage from './pages/ProgressPage'
+import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/review" element={<ReviewPage />} />
         <Route path="/progress" element={<ProgressPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </HashRouter>
   )

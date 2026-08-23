@@ -22,8 +22,8 @@
 - React 19 + Vite + TypeScript
 - React Router 7
 - lucide-react 图标
-- localStorage（数据）+ IndexedDB（图片）
-- Vercel Serverless Function + DeepSeek（AI 教练）
+- localStorage（数据 + API 配置）+ IndexedDB（图片）
+- 前端直连 DeepSeek（OpenAI 兼容协议）
 
 ## 本地运行
 
@@ -34,21 +34,24 @@ npm run dev
 
 打开 http://localhost:5173
 
-> 本地开发时 AI 教练不可用（`/api/coach` 是 Vercel 函数），点击会提示"部署后使用"，这是正常的。
+> 用 AI 教练前，先在「设置」里填你的 DeepSeek API Key（Base URL 和模型名一般不用改）。
 
-## 部署到 Vercel
+## 部署
 
-1. 把仓库导入 Vercel
-2. 设置环境变量 `DEEPSEEK_API_KEY`
-3. 部署完成，AI 教练自动接通
+纯静态站点，任何静态托管都能跑（GitHub Pages、Vercel、Cloudflare Pages 等）：
+
+1. 把 `dist/` 构建产物（或整个仓库）部署到任意静态托管
+2. 打开后进入「设置」，填你的 DeepSeek API Key
+3. AI 教练即可使用
+
+**为什么不用后端**：API Key 只存在你自己的浏览器里，产品里没有"公共 key"——别人打开网页用的是他们自己的 key（花他们自己的钱），你的额度不会被白嫖。
 
 ## 目录结构
 
 ```
-api/                 # Vercel Serverless Function（AI 教练后端）
 src/
-  pages/             # 首页 / 记录 / 货库 / 回看 / 进步
-  services/          # AI 教练调用封装
+  pages/             # 首页 / 记录 / 货库 / 回看 / 进步 / 设置
+  services/          # AI 教练调用（前端直连 + 提示词）
   utils/             # 存储、统计、图片
 货库表达训练系统-PRD-2026-08-23.md   # 产品需求文档
 ```

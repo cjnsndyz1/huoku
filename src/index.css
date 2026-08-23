@@ -615,6 +615,46 @@ textarea::placeholder {
   display: block;
 }
 
+/* ============ 设置页 ============ */
+.text-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 13px 15px;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--paper-light);
+  line-height: 1.6;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: #fffef9;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin-top: 24px;
+  padding: 8px 12px;
+  min-height: 40px;
+}
+
+.settings-link:hover {
+  color: var(--accent);
+}
+
 /* ============ 移动端适配 ============ */
 @media (max-width: 480px) {
   .title {
