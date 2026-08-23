@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Trash2 } from 'lucide-react'
 import { TAGS, type Tag } from '../types'
-import { deleteEntry, formatDate, loadHistory } from '../utils/storage'
+import { formatDate } from '../utils/storage'
 import { deleteImage, loadImage } from '../utils/imageStore'
+import { deleteEntry } from '../services/dataService'
+import { useEntries } from '../hooks/useEntries'
+import SetupGuide from '../components/SetupGuide'
 
 function EntryImage({ imageId }: { imageId: string }) {
   const [url, setUrl] = useState<string>()
@@ -25,16 +28,31 @@ function EntryImage({ imageId }: { imageId: string }) {
 }
 
 export default function LibraryPage() {
-  const [refresh, setRefresh] = useState(0)
   const [filter, setFilter] = useState<Tag | '全部'>('全部')
-  const history = useMemo(() => loadHistory(), [refresh])
+  const { entries, loading, error, needsSetup, refresh } = useEntries()
 
-  const list = filter === '全部' ? history : history.filter((e) => e.tag === filter)
+  const list = filter === '全部' ? entries : entries.filter((e) => e.tag === filter)
 
-  const remove = (entry: { id: string; imageId?: string }) => {
-    deleteEntry(entry.id)
-    if (entry.imageId) deleteImage(entry.imageId).catch(() => {})
-    setRefresh((n) => n + 1)
+  const remove = async (id: string, imageId?: string) => {
+    try {
+      await deleteEntry(id)
+      if (imageId) deleteImage(imageId).catch(() => {})
+      await refresh()
+    } catch {
+      /* 删除失败静默，刷新后可见 */
+    }
+  }
+
+  if (needsSetup) return <SetupGuide />
+  if (error) {
+    return (
+      <div className="page page-center">
+        <p className="coach-error">{error}</p>
+        <Link to="/settings" className="btn btn-ghost">
+          去设置
+        </Link>
+      </div>
+    )
   }
 
   return (
@@ -59,7 +77,9 @@ export default function LibraryPage() {
         ))}
       </div>
 
-      {list.length === 0 ? (
+      {loading ? (
+        <p className="empty">加载中…</p>
+      ) : list.length === 0 ? (
         <p className="empty">还没有货。去记第一条吧。</p>
       ) : (
         <div className="entry-list">
@@ -68,7 +88,7 @@ export default function LibraryPage() {
               <div className="entry-meta">
                 <span className="entry-date">{formatDate(e.date)}</span>
                 <span className="entry-tag">{e.tag}</span>
-                <button type="button" className="entry-del" onClick={() => remove(e)} title="删除">
+                <button type="button" className="entry-del" onClick={() => remove(e.id, e.imageId)} title="删除">
                   <Trash2 size={14} />
                 </button>
               </div>

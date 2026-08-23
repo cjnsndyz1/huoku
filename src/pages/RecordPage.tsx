@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Check, Sparkles, CircleAlert, Camera, X } from 'lucide-react'
 import { TAGS, type Tag, type HuoEntry } from '../types'
-import { saveEntry, todayStr } from '../utils/storage'
+import { todayStr } from '../utils/storage'
+import { saveEntry } from '../services/dataService'
 import { callCoach } from '../services/coachService'
 import { compressImage, deleteImage, saveImage } from '../utils/imageStore'
 
@@ -25,6 +26,9 @@ export default function RecordPage() {
   const [imageUrl, setImageUrl] = useState<string | undefined>()
   const [imageError, setImageError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const canSave = happened.trim() !== '' && thought.trim() !== '' && judgment.trim() !== ''
 
@@ -81,20 +85,28 @@ export default function RecordPage() {
     setImageUrl(undefined)
   }
 
-  const save = () => {
-    if (!canSave) return
-    const entry: HuoEntry = {
-      id: crypto.randomUUID(),
-      date: todayStr(),
-      happened: happened.trim(),
-      thought: thought.trim(),
-      judgment: judgment.trim(),
-      tag,
-      createdAt: Date.now(),
-      imageId,
+  const save = async () => {
+    if (!canSave || saving) return
+    setSaving(true)
+    setSaveError('')
+    try {
+      const entry: HuoEntry = {
+        id: crypto.randomUUID(),
+        date: todayStr(),
+        happened: happened.trim(),
+        thought: thought.trim(),
+        judgment: judgment.trim(),
+        tag,
+        createdAt: Date.now(),
+        imageId,
+      }
+      await saveEntry(entry)
+      navigate('/library')
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setSaving(false)
     }
-    saveEntry(entry)
-    navigate('/library')
   }
 
   return (
@@ -187,9 +199,10 @@ export default function RecordPage() {
           ))}
         </div>
 
-        <button type="button" className="btn btn-primary btn-lg" disabled={!canSave} onClick={save}>
-          <Check size={18} /> 存进货库
+        <button type="button" className="btn btn-primary btn-lg" disabled={!canSave || saving} onClick={save}>
+          <Check size={18} /> {saving ? '保存中…' : '存进货库'}
         </button>
+        {saveError && <p className="coach-error">{saveError}（请检查云同步配置）</p>}
       </div>
     </div>
   )

@@ -655,6 +655,46 @@ textarea::placeholder {
   color: var(--accent);
 }
 
+.settings-section {
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-section:last-of-type {
+  border-bottom: none;
+}
+
+.settings-note {
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin: -6px 0 14px;
+}
+
+.login-status {
+  font-size: 14px;
+  color: var(--accent);
+}
+
+/* ============ 云同步引导 ============ */
+.setup-icon {
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.setup-title {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  margin: 0 0 10px;
+}
+
+.setup-desc {
+  font-size: 15px;
+  color: var(--ink-muted);
+  max-width: 360px;
+  margin: 0 0 26px;
+}
+
 /* ============ 移动端适配 ============ */
 @media (max-width: 480px) {
   .title {
