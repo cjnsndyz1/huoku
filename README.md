@@ -23,7 +23,7 @@
 - React Router 7
 - lucide-react 图标
 - **Supabase**（数据云同步 + 邮箱认证）+ **Supabase Storage**（配图云存储）
-- localStorage（DeepSeek 配置 + Supabase 配置）
+- localStorage（DeepSeek 配置本地缓存）
 - 前端直连 DeepSeek（OpenAI 兼容协议）
 
 ## 本地运行
@@ -68,21 +68,35 @@ create policy "images_insert" on storage.objects for insert to authenticated
   with check (bucket_id = 'images' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "images_delete" on storage.objects for delete to authenticated
   using (bucket_id = 'images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- DeepSeek 配置（按账号隔离，换设备登录后自动同步）
+create table user_settings (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  deepseek_key text not null default '',
+  model text not null default 'deepseek-v4-flash',
+  base_url text not null default 'https://api.deepseek.com/v1',
+  updated_at timestamptz default now()
+);
+alter table user_settings enable row level security;
+create policy "读自己的设置" on user_settings for select using (auth.uid() = user_id);
+create policy "写自己的设置" on user_settings for insert with check (auth.uid() = user_id);
+create policy "改自己的设置" on user_settings for update using (auth.uid() = user_id);
 ```
 
 2. **关邮箱验证**：Authentication → Providers → Email → 关掉 Confirm email
-3. **拿 key**：Project Settings → API → 复制 Project URL 和 anon public key
-4. 打开货库 → 设置 → 填 URL + Anon Key → 填邮箱密码注册登录
+3. 打开货库 → 设置 → 填邮箱密码注册登录 → 填 DeepSeek API Key
+
+> Supabase 连接信息已写死在代码里（URL + Anon Key 是公开信息），换设备不用再填，登录即可同步。
 
 ## 部署
 
 纯静态站点，任何静态托管都能跑（GitHub Pages、Vercel、Cloudflare Pages 等）：
 
 1. 把 `dist/` 构建产物（或整个仓库）部署到任意静态托管
-2. 打开后进入「设置」，填 Supabase 配置（登录）+ DeepSeek API Key
-3. 即可使用
+2. 打开后进入「设置」→ 注册/登录 → 填 DeepSeek API Key
+3. 即可使用（换设备只需登录，配置自动同步）
 
-**为什么 AI 不用后端**：DeepSeek Key 只存在你自己的浏览器里，产品里没有"公共 key"——别人打开网页用的是他们自己的 key（花他们自己的钱），你的额度不会被白嫖。**数据安全**由 Supabase RLS 保证（别人登录也看不到你的记录）。
+**为什么 AI 不用后端**：DeepSeek Key 存你自己的账号（Supabase RLS 隔离），产品里没有"公共 key"——别人登录看到的是他们自己的账号，花他们自己的额度。**数据安全**由 Supabase RLS 保证（别人登录也看不到你的记录）。
 
 ## 目录结构
 

@@ -1,5 +1,8 @@
-// AI 教练调用（费曼式：前端直连，key 存浏览器 localStorage，用户自己填）
+// AI 教练调用（费曼式：前端直连，key 存浏览器 localStorage 缓存）
 // 产品里没有"公共 key"，每个使用者花各自的额度，天然隔离。
+// key 同时存 Supabase（按账号同步），换设备登录后自动带过来。
+
+import { loadAiSettings } from './aiSettingsService'
 
 export type CoachMode = 'dig' | 'cliche'
 
@@ -20,7 +23,7 @@ const CONFIG_KEY = 'biaodaxunlian:api-config'
 export const DEFAULT_CONFIG: ApiConfig = {
   baseUrl: 'https://api.deepseek.com/v1',
   apiKey: '',
-  model: 'deepseek-chat',
+  model: 'deepseek-v4-flash',
 }
 
 // ── 教练式提示词 ──
@@ -132,7 +135,19 @@ async function requestOnce(url: string, body: object, apiKey: string): Promise<s
 }
 
 export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise<string> {
-  const config = loadApiConfig()
+  let config = loadApiConfig()
+  if (!config.apiKey.trim()) {
+    // 本地无 key：尝试从云端同步（跨设备场景，登录后自动带上）
+    try {
+      const cloud = await loadAiSettings()
+      if (cloud && cloud.apiKey.trim()) {
+        config = cloud
+        saveApiConfig(cloud) // 缓存到本地，下次直接读
+      }
+    } catch {
+      /* 云端读取失败，走下面的报错 */
+    }
+  }
   if (!config.apiKey.trim()) {
     throw new Error('还没配置 API Key，请先到设置里填写')
   }

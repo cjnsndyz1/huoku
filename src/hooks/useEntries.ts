@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { HuoEntry } from '../types'
 import { loadEntries } from '../services/dataService'
-import { hasSupabaseConfig, isLoggedIn } from '../services/supabase'
+import { isLoggedIn } from '../services/supabase'
 
 export interface UseEntriesResult {
   entries: HuoEntry[]
@@ -20,11 +20,6 @@ export function useEntries(): UseEntriesResult {
   const [needsSetup, setNeedsSetup] = useState(false)
 
   const refresh = useCallback(async () => {
-    if (!hasSupabaseConfig()) {
-      setNeedsSetup(true)
-      setLoading(false)
-      return
-    }
     const logged = await isLoggedIn().catch(() => false)
     if (!logged) {
       setNeedsSetup(true)

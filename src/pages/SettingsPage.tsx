@@ -7,16 +7,8 @@ import {
   saveApiConfig,
   testApiConfig,
 } from '../services/coachService'
-import {
-  hasSupabaseConfig,
-  isLoggedIn,
-  loadSupabaseConfig,
-  resetClient,
-  saveSupabaseConfig,
-  signIn,
-  signOut,
-  signUp,
-} from '../services/supabase'
+import { loadAiSettings, saveAiSettings } from '../services/aiSettingsService'
+import { isLoggedIn, signIn, signOut, signUp } from '../services/supabase'
 
 export default function SettingsPage() {
   // AI 配置
@@ -25,9 +17,7 @@ export default function SettingsPage() {
   const [model, setModel] = useState(loadApiConfig().model)
   const [testing, setTesting] = useState(false)
 
-  // Supabase 配置 + 登录
-  const [sbUrl, setSbUrl] = useState(loadSupabaseConfig().url)
-  const [sbKey, setSbKey] = useState(loadSupabaseConfig().anonKey)
+  // 登录
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loggedIn, setLoggedIn] = useState(false)
@@ -47,40 +37,29 @@ export default function SettingsPage() {
     }
   }, [])
 
-  const saveAi = () => {
-    saveApiConfig({
-      baseUrl: baseUrl.trim() || DEFAULT_CONFIG.baseUrl,
-      apiKey: apiKey.trim(),
-      model: model.trim() || DEFAULT_CONFIG.model,
-    })
-    setMsg('AI 配置已保存')
-  }
-
-  const testAi = async () => {
-    setTesting(true)
-    setMsg('')
-    const result = await testApiConfig({ baseUrl, apiKey, model })
-    setMsg(result)
-    setTesting(false)
-  }
-
-  const saveSb = () => {
-    saveSupabaseConfig({ url: sbUrl.trim(), anonKey: sbKey.trim() })
-    resetClient()
-    setMsg('Supabase 配置已保存')
+  // 登录后：从云端拉取 DeepSeek 配置（跨设备自动带过来）
+  const syncAiFromCloud = async () => {
+    try {
+      const cloud = await loadAiSettings()
+      if (cloud && cloud.apiKey.trim()) {
+        setApiKey(cloud.apiKey)
+        setModel(cloud.model)
+        setBaseUrl(cloud.baseUrl)
+        saveApiConfig(cloud) // 缓存到本地
+      }
+    } catch {
+      /* 云端无配置，忽略 */
+    }
   }
 
   const doLogin = async () => {
-    if (!hasSupabaseConfig()) {
-      setMsg('请先保存上面的 Supabase 配置')
-      return
-    }
     setBusy(true)
     setMsg('')
     try {
       await signIn(email.trim(), password)
       setLoggedIn(true)
       setMsg('登录成功')
+      await syncAiFromCloud()
     } catch (e) {
       setMsg(`登录失败：${e instanceof Error ? e.message : '请检查邮箱密码'}`)
     } finally {
@@ -89,16 +68,13 @@ export default function SettingsPage() {
   }
 
   const doSignup = async () => {
-    if (!hasSupabaseConfig()) {
-      setMsg('请先保存上面的 Supabase 配置')
-      return
-    }
     setBusy(true)
     setMsg('')
     try {
       await signUp(email.trim(), password)
       setLoggedIn(true)
       setMsg('注册成功，已登录')
+      await syncAiFromCloud()
     } catch (e) {
       setMsg(`注册失败：${e instanceof Error ? e.message : '请检查邮箱密码'}`)
     } finally {
@@ -112,6 +88,29 @@ export default function SettingsPage() {
     setMsg('已退出登录')
   }
 
+  const saveAi = async () => {
+    const cfg = {
+      baseUrl: baseUrl.trim() || DEFAULT_CONFIG.baseUrl,
+      apiKey: apiKey.trim(),
+      model: model.trim() || DEFAULT_CONFIG.model,
+    }
+    saveApiConfig(cfg) // 本地缓存
+    try {
+      await saveAiSettings(cfg) // 同步云端
+      setMsg('AI 配置已保存并同步到云端')
+    } catch {
+      setMsg('AI 配置已保存到本地（云端同步失败，请先登录）')
+    }
+  }
+
+  const testAi = async () => {
+    setTesting(true)
+    setMsg('')
+    const result = await testApiConfig({ baseUrl, apiKey, model })
+    setMsg(result)
+    setTesting(false)
+  }
+
   return (
     <div className="page">
       <header className="page-header">
@@ -121,40 +120,16 @@ export default function SettingsPage() {
         <h1>设置</h1>
       </header>
 
-      {/* 云存储（Supabase） */}
+      {/* 账号（云同步） */}
       <section className="settings-section">
         <h2 className="section-title">
-          <Cloud size={16} /> 云同步（Supabase）
+          <Cloud size={16} /> 账号（云同步）
         </h2>
         <p className="settings-note">
-          数据存云端，电脑手机自动同步。首次使用：填配置 → 注册账号 → 登录。
+          登录后，你的货和 AI 配置自动在电脑手机间同步。
         </p>
 
         <div className="form">
-          <label className="field">
-            <span className="field-label">Supabase URL</span>
-            <input
-              type="text"
-              className="text-input"
-              value={sbUrl}
-              onChange={(e) => setSbUrl(e.target.value)}
-              placeholder="https://xxxx.supabase.co"
-            />
-          </label>
-          <label className="field">
-            <span className="field-label">Anon Key</span>
-            <input
-              type="text"
-              className="text-input"
-              value={sbKey}
-              onChange={(e) => setSbKey(e.target.value)}
-              placeholder="eyJhbGciOi..."
-            />
-          </label>
-          <button type="button" className="btn btn-ghost" onClick={saveSb}>
-            <Save size={16} /> 保存 Supabase 配置
-          </button>
-
           {!loggedIn ? (
             <>
               <label className="field">
@@ -202,7 +177,9 @@ export default function SettingsPage() {
         <h2 className="section-title">
           <Zap size={16} /> AI 教练（DeepSeek）
         </h2>
-        <p className="settings-note">Key 只存在你浏览器里，走你自己的 DeepSeek 额度。</p>
+        <p className="settings-note">
+          Key 存在你的账号里（云端同步），走你自己的 DeepSeek 额度。换设备登录后自动带过来。
+        </p>
 
         <div className="form">
           <label className="field">
@@ -222,7 +199,7 @@ export default function SettingsPage() {
               className="text-input"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder="deepseek-chat"
+              placeholder="deepseek-v4-flash"
             />
           </label>
           <label className="field">

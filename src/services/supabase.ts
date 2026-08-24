@@ -1,53 +1,18 @@
 // Supabase 客户端 + 认证
+// 连接信息（URL + Anon Key）是公开信息，直接写死，换设备无需重新配置。
+// 数据安全由 RLS（行级安全）保证，不依赖 key 保密。
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-export interface SupabaseConfig {
-  url: string
-  anonKey: string
-}
-
-const CONFIG_KEY = 'biaodaxunlian:supabase-config'
+const SUPABASE_URL = 'https://redoplzkztianfbdvcve.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_WM2CzGPvDm-NDQK5VqU55g_0gGhThif'
 
 let client: SupabaseClient | null = null
 
-export function loadSupabaseConfig(): SupabaseConfig {
-  try {
-    const raw = localStorage.getItem(CONFIG_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch {
-    /* 忽略 */
-  }
-  return { url: '', anonKey: '' }
-}
-
-export function saveSupabaseConfig(config: SupabaseConfig): void {
-  try {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
-  } catch {
-    /* 忽略 */
-  }
-}
-
-export function hasSupabaseConfig(): boolean {
-  const c = loadSupabaseConfig()
-  return c.url.trim() !== '' && c.anonKey.trim() !== ''
-}
-
-/** 懒初始化客户端；未配置时抛错 */
 export function getClient(): SupabaseClient {
-  const config = loadSupabaseConfig()
-  if (!config.url.trim() || !config.anonKey.trim()) {
-    throw new Error('请先在设置里配置 Supabase')
-  }
   if (!client) {
-    client = createClient(config.url.trim(), config.anonKey.trim())
+    client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   }
   return client
-}
-
-/** 配置改变后重置客户端 */
-export function resetClient(): void {
-  client = null
 }
 
 // ── 认证 ──
@@ -70,7 +35,11 @@ export async function signOut(): Promise<void> {
 }
 
 export async function isLoggedIn(): Promise<boolean> {
-  if (!hasSupabaseConfig()) return false
   const { data } = await getClient().auth.getSession()
   return !!data.session
+}
+
+export async function currentUserId(): Promise<string | null> {
+  const { data } = await getClient().auth.getUser()
+  return data.user?.id ?? null
 }
