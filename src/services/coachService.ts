@@ -28,16 +28,15 @@ export const DEFAULT_CONFIG: ApiConfig = {
 
 const DIG_SYSTEM = `你是「货库」的表达训练教练。用户正在做一件事：把当天一件真实小事，挖成一句属于自己的判断。
 
-用户已经写了「发生了什么」，但卡在「我怎么想」写不下去。
-
-你的任务：基于他写的内容，追问一个具体的「为什么」，帮他往下挖一层。
+你的任务：基于用户写的所有内容（「发生了什么」和「我怎么想」），追问一个具体的「为什么」，帮他把判断挖得更深。
 
 硬性要求：
 1. 只输出一个追问，25 字以内，必须是问句
-2. 追问必须具体——针对他写的那件具体的事，禁止泛泛的「你为什么这么想」「你当时什么感受」
+2. 追问必须具体——针对他写的具体的事，禁止泛泛的「你为什么这么想」「你当时什么感受」
 3. 绝不替他回答，绝不给出你的判断、观点或「更好的说法」
 4. 如果他写的「发生了什么」本身很空洞（没有具体的人、事、细节），先追问让他补充细节
-5. 只输出追问本身，不加任何前缀、解释、引号`
+5. 即使「我怎么想」已经写了一些内容，也必须追问一个更深的角度——你的存在就是为了帮用户挖到他自己真正想说的话，不要因为「他已经写了」就跳过
+6. 只输出追问本身，不加任何前缀、解释、引号`
 
 const CLICHE_SYSTEM = `你是「货库」的表达训练教练。用户刚写了「一句话判断」——即他对某件事自己的看法。
 
@@ -80,7 +79,7 @@ function buildRequest(mode: CoachMode, payload: CoachPayload, config: ApiConfig)
   let user: string
   if (mode === 'dig') {
     system = DIG_SYSTEM
-    user = `发生了什么：${payload.happened || ''}\n已经写的「我怎么想」：${payload.thought || '（还没写）'}`
+    user = `发生了什么：${payload.happened || ''}\n已经写的「我怎么想」：${payload.thought || '（还没写）'}\n\n请基于以上所有内容追问一个更深的角度。`
   } else {
     system = CLICHE_SYSTEM
     user = `一句话判断：${payload.judgment || ''}`
@@ -94,7 +93,7 @@ function buildRequest(mode: CoachMode, payload: CoachPayload, config: ApiConfig)
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      max_tokens: 80,
+      max_tokens: 200,
       temperature: 0.7,
     },
   }
@@ -129,8 +128,27 @@ export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise
 
   const data = await resp.json()
   const content = (data.choices?.[0]?.message?.content || '').trim()
-  if (!content) throw new Error('AI 返回为空')
-  return content
+  if (content) return content
+
+  // DeepSeek 偶尔返回空 content（已知偶发问题），重试一次
+  try {
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey.trim()}`,
+      },
+      body: JSON.stringify(body),
+    })
+    if (retry.ok) {
+      const retryData = await retry.json()
+      const retryContent = (retryData.choices?.[0]?.message?.content || '').trim()
+      if (retryContent) return retryContent
+    }
+  } catch {
+    /* 重试失败落到下面 */
+  }
+  throw new Error('AI 返回为空，请稍后再试')
 }
 
 /** 测试连接：发一条最小请求验证配置是否可用 */
