@@ -93,9 +93,41 @@ function buildRequest(mode: CoachMode, payload: CoachPayload, config: ApiConfig)
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      max_tokens: 200,
+      max_tokens: 1024,
       temperature: 0.7,
     },
+  }
+}
+
+const REQUEST_TIMEOUT_MS = 60_000
+const MAX_RETRIES = 2
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** 发一次请求，返回解析出的文本；空内容返回 ''（由调用方决定是否重试） */
+async function requestOnce(url: string, body: object, apiKey: string): Promise<string> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    if (!resp.ok) {
+      const err = await resp.text().catch(() => '')
+      if (resp.status === 401 || resp.status === 403) throw new Error('API Key 无效，请检查')
+      throw new Error(`调用失败（${resp.status}）${err.slice(0, 80)}`)
+    }
+    const data = await resp.json()
+    const msg = data.choices?.[0]?.message || {}
+    // 优先最终答案 content；思考模式被 max_tokens 截断时兜底取 reasoning_content，避免返回空
+    return (msg.content || '').trim() || (msg.reasoning_content || '').trim()
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -105,48 +137,23 @@ export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise
     throw new Error('还没配置 API Key，请先到设置里填写')
   }
   const { url, body } = buildRequest(mode, payload, config)
+  const apiKey = config.apiKey.trim()
 
-  let resp: Response
-  try {
-    resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey.trim()}`,
-      },
-      body: JSON.stringify(body),
-    })
-  } catch {
-    throw new Error('网络请求失败，请检查 Base URL 是否正确')
-  }
-
-  if (!resp.ok) {
-    const err = await resp.text().catch(() => '')
-    if (resp.status === 401 || resp.status === 403) throw new Error('API Key 无效，请检查')
-    throw new Error(`调用失败（${resp.status}）${err.slice(0, 80)}`)
-  }
-
-  const data = await resp.json()
-  const content = (data.choices?.[0]?.message?.content || '').trim()
-  if (content) return content
-
-  // DeepSeek 偶尔返回空 content（已知偶发问题），重试一次
-  try {
-    const retry = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey.trim()}`,
-      },
-      body: JSON.stringify(body),
-    })
-    if (retry.ok) {
-      const retryData = await retry.json()
-      const retryContent = (retryData.choices?.[0]?.message?.content || '').trim()
-      if (retryContent) return retryContent
+  for (let attempt = 0; ; attempt++) {
+    let content = ''
+    try {
+      content = await requestOnce(url, body, apiKey)
+    } catch (e) {
+      // 认证错误重试无意义，直接抛；其余（超时/5xx/网络）重试
+      if (e instanceof Error && e.message.startsWith('API Key')) throw e
+      if (attempt >= MAX_RETRIES) throw e
+      await sleep(300 * (attempt + 1))
+      continue
     }
-  } catch {
-    /* 重试失败落到下面 */
+    if (content) return content
+    // 空内容：重试
+    if (attempt >= MAX_RETRIES) break
+    await sleep(300 * (attempt + 1))
   }
   throw new Error('AI 返回为空，请稍后再试')
 }
