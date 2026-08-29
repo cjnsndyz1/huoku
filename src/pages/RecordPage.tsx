@@ -1,6 +1,15 @@
 import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Sparkles, CircleAlert, Camera, X } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  Sparkles,
+  CircleAlert,
+  Camera,
+  X,
+  ChevronRight,
+  ChevronLeft,
+} from 'lucide-react'
 import { TAGS, type Tag, type HuoEntry } from '../types'
 import { todayStr } from '../utils/storage'
 import { saveEntry } from '../services/dataService'
@@ -8,8 +17,38 @@ import { callCoach } from '../services/coachService'
 import { compressImage } from '../utils/imageStore'
 import { uploadImage } from '../services/imageService'
 
+// 今日三问：线索式问句，治「打开页面不知道写什么」的白纸障碍
+const QUESTIONS = [
+  '今天第一个跟你说话的人是谁？他说了什么？',
+  '刚才哪句话或哪个画面，让你心里动了一下？',
+  '今天哪件小事让你皱眉，或让你笑了一下？',
+  '今天你走路或坐车时，眼睛落在什么上面了？',
+  '今天谁做的一件事，让你觉得「原来还可以这样」？',
+  '今天有没有一刻，你想说话却咽回去了？',
+  '今天最费你时间的一件事是什么？',
+  '今天你吃到、闻到或听到的什么，让你停了一下？',
+]
+
+function pickThree(arr: string[]): string[] {
+  const copy = [...arr]
+  const out: string[] = []
+  while (copy.length && out.length < 3) {
+    const i = Math.floor(Math.random() * copy.length)
+    out.push(copy.splice(i, 1)[0])
+  }
+  return out
+}
+
+const STEPS = [
+  { n: 1 as const, label: '发生了什么' },
+  { n: 2 as const, label: '我怎么想' },
+  { n: 3 as const, label: '一句话判断' },
+]
+
 export default function RecordPage() {
   const navigate = useNavigate()
+  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [questions] = useState<string[]>(() => pickThree(QUESTIONS))
   const [happened, setHappened] = useState('')
   const [thought, setThought] = useState('')
   const [judgment, setJudgment] = useState('')
@@ -31,14 +70,15 @@ export default function RecordPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
-  const canSave = happened.trim() !== '' && thought.trim() !== '' && judgment.trim() !== ''
+  // P0-2：至少一项非空即可保存（不再逼着写满三行）
+  const canSave = happened.trim() !== '' || thought.trim() !== '' || judgment.trim() !== ''
 
   const dig = async () => {
     setDigLoading(true)
     setDigError('')
     setDigResult('')
     try {
-      const q = await callCoach('dig', { happened, thought })
+      const q = await callCoach('dig', { happened, thought, lastQuestion: digResult || undefined })
       setDigResult(q)
     } catch (e) {
       setDigError(e instanceof Error ? e.message : '调用失败')
@@ -87,7 +127,6 @@ export default function RecordPage() {
     setSaving(true)
     setSaveError('')
     try {
-      // 先传图（有图才传），拿到 Storage 路径；失败则整体中止，保证数据一致
       let imagePath: string | undefined
       if (imageBlob) {
         imagePath = await uploadImage(imageBlob)
@@ -120,91 +159,172 @@ export default function RecordPage() {
         <h1>记一条货</h1>
       </header>
 
-      <div className="form">
-        <label className="field">
-          <span className="field-label">发生了什么</span>
-          <textarea
-            value={happened}
-            onChange={(e) => setHappened(e.target.value)}
-            placeholder="今天一件真实的小事，哪怕再小…"
-            rows={2}
-          />
-        </label>
+      <div className="steps">
+        {STEPS.map((s) => (
+          <button
+            key={s.n}
+            type="button"
+            className={`step-item ${step === s.n ? 'step-active' : ''} ${s.n < step ? 'step-done' : ''}`}
+            onClick={() => setStep(s.n)}
+          >
+            <span className="step-num">{s.n < step ? <Check size={12} /> : s.n}</span>
+            <span className="step-label">{s.label}</span>
+          </button>
+        ))}
+      </div>
 
-        <div className="photo-area">
-          {imageUrl ? (
-            <div className="photo-preview">
-              <img src={imageUrl} alt="配图" />
-              <button type="button" className="photo-remove" onClick={removeImage} title="移除图片">
-                <X size={14} />
+      <div className="form">
+        {step === 1 && (
+          <>
+            {happened.trim() === '' && (
+              <div className="today-questions">
+                <p className="tq-title">今天想不起记什么？挑一个问句，答一句就够</p>
+                {questions.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    className="tq-btn"
+                    onClick={() => setHappened(q)}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <label className="field">
+              <span className="field-label">发生了什么</span>
+              <textarea
+                value={happened}
+                onChange={(e) => setHappened(e.target.value)}
+                placeholder="今天一件真实的小事，哪怕再小… 想不起来就留空，交给 AI 帮你想"
+                rows={2}
+              />
+            </label>
+
+            <div className="photo-area">
+              {imageUrl ? (
+                <div className="photo-preview">
+                  <img src={imageUrl} alt="配图" />
+                  <button type="button" className="photo-remove" onClick={removeImage} title="移除图片">
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button type="button" className="btn btn-ghost photo-btn" onClick={() => fileRef.current?.click()}>
+                  <Camera size={16} /> 拍下让你有感觉的一刻
+                </button>
+              )}
+              {imageError && <p className="coach-error">{imageError}</p>}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: 'none' }}
+                onChange={pickImage}
+              />
+            </div>
+
+            {happened.trim() === '' && (
+              <div className="coach">
+                <button type="button" className="btn btn-ghost coach-btn" disabled={digLoading} onClick={dig}>
+                  <Sparkles size={16} /> {digLoading ? 'AI 正在想…' : 'AI 帮我想起今天的事'}
+                </button>
+                <p className="coach-hint">想不起来时，让 AI 问几个问题帮你回忆</p>
+                {digResult && <p className="coach-result">{digResult}</p>}
+                {digError && <p className="coach-error">{digError}</p>}
+              </div>
+            )}
+
+            <div className="step-nav">
+              <span />
+              <button type="button" className="btn btn-primary" onClick={() => setStep(2)}>
+                下一步 <ChevronRight size={16} />
               </button>
             </div>
-          ) : (
-            <button type="button" className="btn btn-ghost photo-btn" onClick={() => fileRef.current?.click()}>
-              <Camera size={16} /> 拍下让你有感觉的一刻
-            </button>
-          )}
-          {imageError && <p className="coach-error">{imageError}</p>}
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={pickImage} />
-        </div>
-
-        <label className="field">
-          <span className="field-label">我怎么想</span>
-          <textarea
-            value={thought}
-            onChange={(e) => setThought(e.target.value)}
-            placeholder="往下挖一层：为什么会这样？我当时什么感受？"
-            rows={3}
-          />
-        </label>
-
-        {happened.trim() !== '' && (
-          <div className="coach">
-            <button type="button" className="btn btn-ghost coach-btn" disabled={digLoading} onClick={dig}>
-              <Sparkles size={16} /> {digLoading ? 'AI 正在想…' : 'AI 帮我挖'}
-            </button>
-            {digResult && <p className="coach-result">{digResult}</p>}
-            {digError && <p className="coach-error">{digError}</p>}
-          </div>
+          </>
         )}
 
-        <label className="field">
-          <span className="field-label">一句话判断</span>
-          <textarea
-            value={judgment}
-            onChange={(e) => setJudgment(e.target.value)}
-            placeholder="我的答案，不是套话。比如「它不是 X，而是 Y」"
-            rows={2}
-          />
-        </label>
+        {step === 2 && (
+          <>
+            <label className="field">
+              <span className="field-label">我怎么想</span>
+              <textarea
+                value={thought}
+                onChange={(e) => setThought(e.target.value)}
+                placeholder="往下挖一层：为什么会这样？我当时什么感受？"
+                rows={3}
+              />
+            </label>
 
-        {judgment.trim() !== '' && (
-          <div className="coach">
-            <button type="button" className="btn btn-ghost coach-btn" disabled={clicheLoading} onClick={checkCliche}>
-              <CircleAlert size={16} /> {clicheLoading ? '检测中…' : '查是不是套话'}
-            </button>
-            {clicheResult && <p className="coach-result">{clicheResult}</p>}
-            {clicheError && <p className="coach-error">{clicheError}</p>}
-          </div>
+            <div className="coach">
+              <button type="button" className="btn btn-ghost coach-btn" disabled={digLoading} onClick={dig}>
+                <Sparkles size={16} /> {digLoading ? 'AI 正在想…' : 'AI 帮我挖'}
+              </button>
+              <p className="coach-hint">基于「发生了什么」和「我怎么想」提问，挖得更深一层</p>
+              {digResult && <p className="coach-result">{digResult}</p>}
+              {digError && <p className="coach-error">{digError}</p>}
+            </div>
+
+            <div className="step-nav">
+              <button type="button" className="btn btn-ghost" onClick={() => setStep(1)}>
+                <ChevronLeft size={16} /> 上一步
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => setStep(3)}>
+                下一步 <ChevronRight size={16} />
+              </button>
+            </div>
+          </>
         )}
 
-        <div className="tags">
-          {TAGS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={`tag ${tag === t ? 'tag-active' : ''}`}
-              onClick={() => setTag(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {step === 3 && (
+          <>
+            <label className="field">
+              <span className="field-label">一句话判断</span>
+              <textarea
+                value={judgment}
+                onChange={(e) => setJudgment(e.target.value)}
+                placeholder="我的答案，不是套话。比如「它不是 X，而是 Y」"
+                rows={2}
+              />
+            </label>
 
-        <button type="button" className="btn btn-primary btn-lg" disabled={!canSave || saving} onClick={save}>
-          <Check size={18} /> {saving ? '保存中…' : '存进货库'}
-        </button>
-        {saveError && <p className="coach-error">{saveError}（请检查云同步配置）</p>}
+            {judgment.trim() !== '' && (
+              <div className="coach">
+                <button type="button" className="btn btn-ghost coach-btn" disabled={clicheLoading} onClick={checkCliche}>
+                  <CircleAlert size={16} /> {clicheLoading ? '检测中…' : '查是不是套话'}
+                </button>
+                <p className="coach-hint">只看「一句话判断」，检测它是你的判断还是套话</p>
+                {clicheResult && <p className="coach-result">{clicheResult}</p>}
+                {clicheError && <p className="coach-error">{clicheError}</p>}
+              </div>
+            )}
+
+            <div className="tags">
+              {TAGS.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`tag ${tag === t ? 'tag-active' : ''}`}
+                  onClick={() => setTag(t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            <div className="step-nav">
+              <button type="button" className="btn btn-ghost" onClick={() => setStep(2)}>
+                <ChevronLeft size={16} /> 上一步
+              </button>
+              <button type="button" className="btn btn-primary btn-lg" disabled={!canSave || saving} onClick={save}>
+                <Check size={18} /> {saving ? '保存中…' : '存进货库'}
+              </button>
+            </div>
+            {saveError && <p className="coach-error">{saveError}（请检查云同步配置）</p>}
+          </>
+        )}
       </div>
     </div>
   )

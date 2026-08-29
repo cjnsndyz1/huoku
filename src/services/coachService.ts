@@ -10,6 +10,8 @@ export interface CoachPayload {
   happened?: string
   thought?: string
   judgment?: string
+  /** 上次 AI 追问过的问题，dig 模式用它防止重复提问 */
+  lastQuestion?: string
 }
 
 export interface ApiConfig {
@@ -39,8 +41,10 @@ const DIG_SYSTEM = `你是「货库」的表达训练教练。用户正在做一
 3. 绝不替他回答，绝不给出你的判断、观点或"更好的说法"
 4. 不要复述用户原话开头（如"你说你今天去菜市场了…"），直接抛问
 5. 如果「发生了什么」缺具体细节（没有具体的人、动作、对话、场景），优先追问让他补一个具体细节
-6. 即使「我怎么想」已经写了内容，也必须追问一个更深的角度——你的存在就是为了帮用户挖到他自己真正想说的话，不要因为"他已经写了"就跳过
-7. 只输出追问本身，不加任何前缀、解释、引号
+6. 如果「发生了什么」是空的（还没写），先帮他想起今天的事——问「今天有没有哪一刻让你停下来过？哪怕一秒」这类引导回忆的问题，不要替他选事
+7. 即使「我怎么想」已经写了内容，也必须追问一个更深的角度——你的存在就是为了帮用户挖到他自己真正想说的话，不要因为"他已经写了"就跳过
+8. 如果用户提供了「上次问过的问题」，这次绝不能重复它，必须换一个角度
+9. 只输出追问本身，不加任何前缀、解释、引号
 
 示例（反例→正例）：
 用户写「今天上班很累」
@@ -66,9 +70,9 @@ const CLICHE_SYSTEM = `你是「货库」的表达训练教练。用户刚写了
 - 无主语感想：没有主语的泛泛感叹（如「生活就是这样」「人心难测」）
 
 输出要求：
-1. 只输出一句话反馈，30 字以内
-2. 是套话 → 直接点名哪一类 + 追问：「这是[鸡汤/废话/他人观点/泛泛感想]，你对这件具体事怎么看？」
-3. 是自己的判断 → 简短肯定一句（如"有你的视角"），不啰嗦
+1. 只输出两句，共 45 字以内：第一句判定，第二句下一步建议
+2. 是套话 → 第一句点名哪一类（「这是鸡汤/废话/他人观点/泛泛感想」），第二句给具体改法：「对今天那件具体事，用『它不是 X，而是 Y』填一下」
+3. 是自己的判断 → 第一句简短肯定（如「有你的视角」），第二句建议「可以存了」
 4. 不加任何前缀、解释、引号
 
 示例：
@@ -105,10 +109,13 @@ function buildRequest(mode: CoachMode, payload: CoachPayload, config: ApiConfig)
   let user: string
   if (mode === 'dig') {
     system = DIG_SYSTEM
-    user = `发生了什么：${payload.happened || ''}\n已经写的「我怎么想」：${payload.thought || '（还没写）'}\n\n请基于以上所有内容追问一个更深的角度。`
+    user = `发生了什么：${payload.happened?.trim() || '（还没写）'}\n已经写的「我怎么想」：${payload.thought?.trim() || '（还没写）'}`
+    const last = payload.lastQuestion?.trim()
+    if (last) user += `\n\n你上次问的是：「${last}」——这次绝不能重复，换一个更深的角度。`
+    user += `\n\n请基于以上所有内容追问一个更深的角度。`
   } else {
     system = CLICHE_SYSTEM
-    user = `一句话判断：${payload.judgment || ''}`
+    user = `一句话判断：${payload.judgment?.trim() || ''}`
   }
   const base = config.baseUrl.trim().replace(/\/+$/, '')
   return {
@@ -121,9 +128,10 @@ function buildRequest(mode: CoachMode, payload: CoachPayload, config: ApiConfig)
       ],
       // V4-Flash 默认开 thinking + effort=high，会吃光 max_tokens 预算导致 content 为空。
       // dig/cliche 是简单任务，不需要思考链；关掉 thinking 让 temperature 重新生效。
+      // dig 0.7 保证多轮追问角度有差异（否则低温度下问题高度趋同）；cliche 0.5 判定更稳。
       thinking: { type: 'disabled' },
       max_tokens: 1024,
-      temperature: 0.3,
+      temperature: mode === 'dig' ? 0.7 : 0.5,
     },
   }
 }
@@ -139,6 +147,7 @@ async function requestOnce(url: string, body: object, apiKey: string): Promise<s
   try {
     const resp = await fetch(url, {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
@@ -162,15 +171,15 @@ async function requestOnce(url: string, body: object, apiKey: string): Promise<s
 
 /** 后处理：剥离常见前缀 + 截断超长输出，确保追问/反馈干净简短。
  *  AI 不听话是常态，代码兜底比 prompt 强约束更可靠。 */
-function cleanCoachReply(raw: string): string {
+function cleanCoachReply(raw: string, maxLen = 40): string {
   let s = raw.trim()
   // 剥离常见前缀（追问：/问题：/AI：/教练：/答：等）
   s = s.replace(/^(追问|问题|AI|教练|答|回复|问)[:：]\s*/i, '')
   // 剥离开头/结尾引号
   s = s.replace(/^["「『"'"""\s]+/, '').replace(/["」』"'"""\s]+$/, '')
-  // 超长（>40 字符）截到第一个问号或句号
-  if (s.length > 40) {
-    const m = s.slice(0, 40).match(/^[^。？?！!]+[。？?！!]/)
+  // 超长截到第一个问号或句号（dig 40 / cliche 60，cliche 允许「判定+建议」两句）
+  if (s.length > maxLen) {
+    const m = s.slice(0, maxLen).match(/^[^。？?！!]+[。？?！!]/)
     if (m) s = m[0]
   }
   return s.trim()
@@ -207,7 +216,7 @@ export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise
       await sleep(300 * (attempt + 1))
       continue
     }
-    if (content) return cleanCoachReply(content)
+    if (content) return cleanCoachReply(content, mode === 'dig' ? 40 : 60)
     // 空内容：重试
     if (attempt >= MAX_RETRIES) break
     await sleep(300 * (attempt + 1))
@@ -223,6 +232,7 @@ export async function testApiConfig(config: ApiConfig): Promise<string> {
   try {
     const resp = await fetch(`${base}/chat/completions`, {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.apiKey.trim()}`,
