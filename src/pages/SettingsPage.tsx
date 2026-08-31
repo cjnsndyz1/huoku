@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Save, Zap, LogIn, LogOut, Cloud } from 'lucide-react'
+import { ArrowLeft, Save, Zap, LogIn, LogOut, Cloud, Eye, EyeOff } from 'lucide-react'
 import {
   DEFAULT_CONFIG,
   loadApiConfig,
@@ -16,6 +16,7 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState(loadApiConfig().apiKey)
   const [model, setModel] = useState(loadApiConfig().model)
   const [testing, setTesting] = useState(false)
+  const [showKey, setShowKey] = useState(false)
 
   // 登录
   const [email, setEmail] = useState('')
@@ -184,13 +185,26 @@ export default function SettingsPage() {
         <div className="form">
           <label className="field">
             <span className="field-label">API Key</span>
-            <input
-              type="text"
-              className="text-input"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-..."
-            />
+            <div className="key-field">
+              <input
+                type={showKey ? 'text' : 'password'}
+                className="text-input"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-..."
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                className="key-toggle"
+                onClick={() => setShowKey((v) => !v)}
+                title={showKey ? '隐藏 API Key' : '显示 API Key'}
+                aria-label={showKey ? '隐藏 API Key' : '显示 API Key'}
+              >
+                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </label>
           <label className="field">
             <span className="field-label">模型名</span>

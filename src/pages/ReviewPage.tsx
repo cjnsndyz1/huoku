@@ -1,6 +1,10 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Feather, Lightbulb, Save } from 'lucide-react'
 import { useEntries } from '../hooks/useEntries'
+import { TAGS, type Tag, type HuoEntry } from '../types'
+import { todayStr } from '../utils/storage'
+import { saveEntry } from '../services/dataService'
 import SetupGuide from '../components/SetupGuide'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -12,8 +16,39 @@ function dateKey(d: Date): string {
 }
 
 export default function ReviewPage() {
-  const { entries, loading, error, needsSetup } = useEntries()
+  const { entries, loading, error, needsSetup, refresh } = useEntries()
   const now = Date.now()
+
+  // P1-6：今日新想法——复习旧货冒出的判断，就地记成新货
+  const [idea, setIdea] = useState('')
+  const [ideaTag, setIdeaTag] = useState<Tag>('自我')
+  const [ideaSaving, setIdeaSaving] = useState(false)
+  const [ideaMsg, setIdeaMsg] = useState('')
+
+  const saveIdea = async () => {
+    if (!idea.trim() || ideaSaving) return
+    setIdeaSaving(true)
+    setIdeaMsg('')
+    try {
+      const entry: HuoEntry = {
+        id: crypto.randomUUID(),
+        date: todayStr(),
+        happened: '',
+        thought: '',
+        judgment: idea.trim(),
+        tag: ideaTag,
+        createdAt: Date.now(),
+      }
+      await saveEntry(entry)
+      setIdea('')
+      setIdeaMsg('已存进货库，翻看旧货长出了新货')
+      await refresh()
+    } catch (e) {
+      setIdeaMsg(`保存失败：${e instanceof Error ? e.message : '请检查云同步配置'}`)
+    } finally {
+      setIdeaSaving(false)
+    }
+  }
 
   const groups = INTERVALS.map((days) => {
     const target = dateKey(new Date(now - days * DAY_MS))
@@ -45,7 +80,12 @@ export default function ReviewPage() {
       {loading ? (
         <p className="empty">加载中…</p>
       ) : groups.length === 0 ? (
-        <p className="empty">暂时没有该复习的货。坚持记，1 天后这里就会有。</p>
+        <div className="empty-state">
+          <p className="empty">暂时没有该复习的货。坚持记，1 天后这里就会有。</p>
+          <Link to="/record" className="btn btn-primary">
+            <Feather size={16} /> 去记一条货
+          </Link>
+        </div>
       ) : (
         groups.map((g) => (
           <section key={g.days} className="review-group">
@@ -59,6 +99,40 @@ export default function ReviewPage() {
           </section>
         ))
       )}
+
+      <section className="new-idea">
+        <h2 className="section-title">
+          <Lightbulb size={16} /> 今日新想法
+        </h2>
+        <p className="settings-note">看完旧货冒出的新判断、新角度？一句话记下来，它就是新货。</p>
+        <textarea
+          rows={2}
+          value={idea}
+          onChange={(e) => setIdea(e.target.value)}
+          placeholder="例如：原来我当时的判断，其实是怕…"
+        />
+        <div className="tags">
+          {TAGS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`tag ${ideaTag === t ? 'tag-active' : ''}`}
+              onClick={() => setIdeaTag(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-idea-save"
+          disabled={!idea.trim() || ideaSaving}
+          onClick={saveIdea}
+        >
+          <Save size={16} /> {ideaSaving ? '保存中…' : '存成今天的货'}
+        </button>
+        {ideaMsg && <p className="backup-msg">{ideaMsg}</p>}
+      </section>
     </div>
   )
 }

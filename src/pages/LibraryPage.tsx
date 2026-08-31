@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   Sparkles,
   CircleAlert,
   Save,
+  Feather,
 } from 'lucide-react'
 import { TAGS, type Tag, type HuoEntry } from '../types'
 import { formatDate } from '../utils/storage'
@@ -21,8 +22,32 @@ import SetupGuide from '../components/SetupGuide'
 
 function EntryImage({ imageId, small }: { imageId: string; small?: boolean }) {
   const [url, setUrl] = useState<string>()
+  const [inView, setInView] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  // 进入视口（提前 200px）才发起 signed URL 请求——列表有多张配图时，滚动到哪加载到哪
+  useEffect(() => {
+    const el = imgRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setInView(true)
+      return
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setInView(true)
+          io.disconnect()
+        }
+      },
+      { rootMargin: '200px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
 
   useEffect(() => {
+    if (!inView) return
     let alive = true
     getSignedUrl(imageId)
       .then((u) => {
@@ -32,13 +57,31 @@ function EntryImage({ imageId, small }: { imageId: string; small?: boolean }) {
     return () => {
       alive = false
     }
-  }, [imageId])
+  }, [inView, imageId])
 
-  if (!url) return null
-  return small ? (
-    <img src={url} className="entry-image-thumb" alt="配图" />
-  ) : (
-    <img src={url} className="entry-image" alt="配图" />
+  if (small) {
+    return (
+      <img
+        ref={imgRef}
+        src={url}
+        className={`entry-image-thumb${loaded ? ' is-loaded' : ''}`}
+        alt="配图"
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+      />
+    )
+  }
+  return (
+    <img
+      ref={imgRef}
+      src={url}
+      className={`entry-image${loaded ? ' is-loaded' : ''}`}
+      alt="配图"
+      loading="lazy"
+      decoding="async"
+      onLoad={() => setLoaded(true)}
+    />
   )
 }
 
@@ -48,7 +91,7 @@ function EntryCard({
   onSaved,
 }: {
   entry: HuoEntry
-  onDelete: (id: string, imageId?: string) => void
+  onDelete: (entry: HuoEntry) => void
   onSaved: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -130,7 +173,7 @@ function EntryCard({
         <button
           type="button"
           className="entry-del"
-          onClick={() => onDelete(entry.id, entry.imageId)}
+          onClick={() => onDelete(entry)}
           title="删除"
         >
           <Trash2 size={14} />
@@ -237,15 +280,74 @@ export default function LibraryPage() {
   const [filter, setFilter] = useState<Tag | '全部'>('全部')
   const { entries, loading, error, needsSetup, refresh } = useEntries()
 
+  // P0-1：删除前确认 + 删除后可撤销
+  const [pendingDelete, setPendingDelete] = useState<HuoEntry | null>(null)
+  const [delErr, setDelErr] = useState('')
+  const [deleted, setDeleted] = useState<HuoEntry | null>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  // 图片延迟删除计时器（按条目 id），撤销时取消，避免误删后图片也跟着没了
+  const imgTimers = useRef(new Map<string, number>())
+  const toastTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    if (pendingDelete) {
+      confirmRef.current?.focus()
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') setPendingDelete(null)
+      }
+      window.addEventListener('keydown', onKey)
+      return () => window.removeEventListener('keydown', onKey)
+    }
+  }, [pendingDelete])
+
+  useEffect(() => {
+    // 组件卸载时清掉所有未触发的图片删除计时器
+    const timers = imgTimers.current
+    return () => timers.forEach((t) => window.clearTimeout(t))
+  }, [])
+
   const list = filter === '全部' ? entries : entries.filter((e) => e.tag === filter)
 
-  const remove = async (id: string, imageId?: string) => {
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    setDelErr('')
     try {
-      await deleteEntry(id)
-      if (imageId) deleteImage(imageId).catch(() => {})
+      await deleteEntry(pendingDelete.id)
+      if (pendingDelete.imageId) {
+        // 图片晚 10 秒再真删，给撤销留出窗口
+        const prev = imgTimers.current.get(pendingDelete.id)
+        if (prev) window.clearTimeout(prev)
+        const t = window.setTimeout(() => {
+          deleteImage(pendingDelete.imageId as string).catch(() => {})
+          imgTimers.current.delete(pendingDelete.id as string)
+        }, 10_000)
+        imgTimers.current.set(pendingDelete.id, t)
+      }
+      setPendingDelete(null)
+      setDeleted(pendingDelete)
+      if (toastTimer.current) window.clearTimeout(toastTimer.current)
+      toastTimer.current = window.setTimeout(() => setDeleted(null), 8000)
       await refresh()
     } catch {
-      /* 删除失败静默，刷新后可见 */
+      setDelErr('删除失败，稍后再试')
+    }
+  }
+
+  const undo = async () => {
+    if (!deleted) return
+    // 取消图片删除
+    const t = imgTimers.current.get(deleted.id)
+    if (t) {
+      window.clearTimeout(t)
+      imgTimers.current.delete(deleted.id)
+    }
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    setDeleted(null)
+    try {
+      await saveEntry(deleted)
+      await refresh()
+    } catch {
+      /* 恢复失败：数据已在云端删除，列表刷新后自然消失 */
     }
   }
 
@@ -286,12 +388,60 @@ export default function LibraryPage() {
       {loading ? (
         <p className="empty">加载中…</p>
       ) : list.length === 0 ? (
-        <p className="empty">还没有货。去记第一条吧。</p>
+        <div className="empty-state">
+          <p className="empty">
+            {filter === '全部' ? '还没有货。去记第一条吧。' : `还没有「${filter}」的货。`}
+          </p>
+          <Link to="/record" className="btn btn-primary">
+            <Feather size={16} /> 去记一条货
+          </Link>
+        </div>
       ) : (
         <div className="entry-list">
           {list.map((e) => (
-            <EntryCard key={e.id} entry={e} onDelete={remove} onSaved={refresh} />
+            <EntryCard key={e.id} entry={e} onDelete={setPendingDelete} onSaved={refresh} />
           ))}
+        </div>
+      )}
+
+      {pendingDelete && (
+        <div className="modal-mask" onClick={() => setPendingDelete(null)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="删除确认"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="modal-title">删掉这条货？</h2>
+            <p className="modal-text">删掉就找不回来了：</p>
+            <blockquote className="modal-quote">
+              {pendingDelete.judgment || pendingDelete.happened || pendingDelete.thought || '（空白记录）'}
+            </blockquote>
+            {delErr && <p className="coach-error">{delErr}</p>}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setPendingDelete(null)}
+                ref={confirmRef}
+              >
+                留下它
+              </button>
+              <button type="button" className="btn btn-danger" onClick={confirmDelete}>
+                删掉
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleted && (
+        <div className="toast" role="status">
+          <span>已删掉 1 条货</span>
+          <button type="button" className="toast-undo" onClick={undo}>
+            撤销
+          </button>
         </div>
       )}
     </div>

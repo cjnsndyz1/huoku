@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -45,14 +45,104 @@ const STEPS = [
   { n: 3 as const, label: '一句话判断' },
 ]
 
+// P0-2：草稿持久化——写一半刷新/切页/误关不丢
+const DRAFT_KEY = 'biaodaxunlian:record-draft'
+
+interface Draft {
+  happened: string
+  thought: string
+  judgment: string
+  tag: Tag
+  savedAt: number
+  hadImage?: boolean
+}
+
+function readDraft(): Draft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    const d = JSON.parse(raw) as Draft
+    if (
+      typeof d.happened !== 'string' ||
+      typeof d.thought !== 'string' ||
+      typeof d.judgment !== 'string' ||
+      typeof d.tag !== 'string'
+    ) {
+      return null
+    }
+    return d
+  } catch {
+    return null
+  }
+}
+
 export default function RecordPage() {
   const navigate = useNavigate()
+  const [draft] = useState(readDraft)
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [questions] = useState<string[]>(() => pickThree(QUESTIONS))
-  const [happened, setHappened] = useState('')
-  const [thought, setThought] = useState('')
-  const [judgment, setJudgment] = useState('')
-  const [tag, setTag] = useState<Tag>('生活')
+  const [happened, setHappened] = useState(draft?.happened ?? '')
+  const [thought, setThought] = useState(draft?.thought ?? '')
+  const [judgment, setJudgment] = useState(draft?.judgment ?? '')
+  const [tag, setTag] = useState<Tag>(draft?.tag ?? '生活')
+  const [restored, setRestored] = useState(() => {
+    const hasText = draft && (draft.happened.trim() || draft.thought.trim() || draft.judgment.trim())
+    return Boolean(hasText)
+  })
+  // P1-5：今日三问只当提示，不把问句填进内容（否则不改就保存会把问句存成货）
+  const [activeQuestion, setActiveQuestion] = useState('')
+  const happenedRef = useRef<HTMLTextAreaElement>(null)
+
+  const pickQuestion = (q: string) => {
+    setActiveQuestion(q)
+    happenedRef.current?.focus()
+  }
+
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null)
+  const [imageUrl, setImageUrl] = useState<string | undefined>()
+  const [imageError, setImageError] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  // 防抖写入草稿；全空则移除
+  const draftTimer = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (draftTimer.current) window.clearTimeout(draftTimer.current)
+    draftTimer.current = window.setTimeout(() => {
+      try {
+        if (happened.trim() || thought.trim() || judgment.trim()) {
+          const d: Draft = { happened, thought, judgment, tag, savedAt: Date.now(), hadImage: !!imageBlob }
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(d))
+        } else {
+          localStorage.removeItem(DRAFT_KEY)
+        }
+      } catch {
+        /* 隐私模式/存储满时静默降级 */
+      }
+    }, 400)
+    return () => {
+      if (draftTimer.current) window.clearTimeout(draftTimer.current)
+    }
+  }, [happened, thought, judgment, tag, imageBlob])
+
+  const clearDraft = () => {
+    try {
+      localStorage.removeItem(DRAFT_KEY)
+    } catch {
+      /* 忽略 */
+    }
+    setHappened('')
+    setThought('')
+    setJudgment('')
+    setTag('生活')
+    setRestored(false)
+  }
+
+  // 文字被手动清空时，恢复提示条自动消失
+  useEffect(() => {
+    if (restored && !happened.trim() && !thought.trim() && !judgment.trim()) {
+      setRestored(false)
+    }
+  }, [happened, thought, judgment, restored])
 
   const [digLoading, setDigLoading] = useState(false)
   const [digResult, setDigResult] = useState('')
@@ -61,11 +151,6 @@ export default function RecordPage() {
   const [clicheLoading, setClicheLoading] = useState(false)
   const [clicheResult, setClicheResult] = useState('')
   const [clicheError, setClicheError] = useState('')
-
-  const [imageBlob, setImageBlob] = useState<Blob | null>(null)
-  const [imageUrl, setImageUrl] = useState<string | undefined>()
-  const [imageError, setImageError] = useState('')
-  const fileRef = useRef<HTMLInputElement>(null)
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -142,6 +227,11 @@ export default function RecordPage() {
         imageId: imagePath,
       }
       await saveEntry(entry)
+      try {
+        localStorage.removeItem(DRAFT_KEY)
+      } catch {
+        /* 忽略 */
+      }
       navigate('/library')
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : '保存失败')
@@ -174,18 +264,25 @@ export default function RecordPage() {
       </div>
 
       <div className="form">
+        {restored && (
+          <div className="draft-note">
+            <span>
+              上次写了一半的草稿已找回
+              {draft?.hadImage && !imageBlob ? '（配图没保住，可重新拍一张）' : ''}
+            </span>
+            <button type="button" className="draft-clear" onClick={clearDraft}>
+              清掉
+            </button>
+          </div>
+        )}
+
         {step === 1 && (
           <>
             {happened.trim() === '' && (
               <div className="today-questions">
-                <p className="tq-title">今天想不起记什么？挑一个问句，答一句就够</p>
+                <p className="tq-title">今天想不起记什么？挑一个问句，答在下面</p>
                 {questions.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    className="tq-btn"
-                    onClick={() => setHappened(q)}
-                  >
+                  <button key={q} type="button" className="tq-btn" onClick={() => pickQuestion(q)}>
                     {q}
                   </button>
                 ))}
@@ -195,9 +292,10 @@ export default function RecordPage() {
             <label className="field">
               <span className="field-label">发生了什么</span>
               <textarea
+                ref={happenedRef}
                 value={happened}
                 onChange={(e) => setHappened(e.target.value)}
-                placeholder="今天一件真实的小事，哪怕再小… 想不起来就留空，交给 AI 帮你想"
+                placeholder={activeQuestion || '今天一件真实的小事，哪怕再小… 想不起来就留空，交给 AI 帮你想'}
                 rows={2}
               />
             </label>
