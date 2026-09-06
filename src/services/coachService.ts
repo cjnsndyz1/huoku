@@ -20,6 +20,29 @@ export interface ApiConfig {
   model: string
 }
 
+// ── 出货（P3）相关类型 ──
+
+/** 出货练习里的一轮对话 */
+export interface ShipMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+/** 出货场景：AI 扮演的听众 + 场景设定 */
+export interface ShipScenario {
+  id: string
+  name: string
+  role: string
+  setting: string
+}
+
+export const SHIP_SCENARIOS: ShipScenario[] = [
+  { id: 'report', name: '向领导汇报', role: '领导', setting: '你在向领导汇报工作，领导关心进展，想知道结果、以及需要什么支持' },
+  { id: 'chat', name: '跟朋友闲聊', role: '朋友', setting: '你跟朋友吃饭聊天，很放松，自然提起这件事' },
+  { id: 'dinner', name: '饭桌即兴', role: '饭桌上的熟人', setting: '饭局上有人提起相关话题，大家七嘴八舌，你想插一句自己的看法' },
+  { id: 'convince', name: '说服别人', role: '持不同意见的人', setting: '对方不太认同你的判断，甚至有点反驳，你想让他理解你的角度' },
+]
+
 const CONFIG_KEY = 'biaodaxunlian:api-config'
 
 export const DEFAULT_CONFIG: ApiConfig = {
@@ -57,7 +80,7 @@ const DIG_SYSTEM = `你是「货库」的表达训练教练。用户正在做一
 
 const CLICHE_SYSTEM = `你是「货库」的表达训练教练。用户刚写了「一句话判断」——即他对某件事自己的看法。
 
-你的任务：判断这句话是他自己的具体判断，还是「套话」。
+你的任务：判断这句话是他自己的具体判断，还是「套话」。你只能判定 + 追问，绝不能替他改写、不能给句式、不能示范"更好的说法"——那是他自己的活，你代劳了就等于让他抄作业。
 
 判断标准（同时满足才算"自己的判断"，缺任一就是套话）：
 - 有具体对象（点名了某件具体事/某个人/某个场景，不是泛指）
@@ -70,17 +93,34 @@ const CLICHE_SYSTEM = `你是「货库」的表达训练教练。用户刚写了
 - 无主语感想：没有主语的泛泛感叹（如「生活就是这样」「人心难测」）
 
 输出要求：
-1. 只输出两句，共 45 字以内：第一句判定，第二句下一步建议
-2. 是套话 → 第一句点名哪一类（「这是鸡汤/废话/他人观点/泛泛感想」），第二句给具体改法：「对今天那件具体事，用『它不是 X，而是 Y』填一下」
-3. 是自己的判断 → 第一句简短肯定（如「有你的视角」），第二句建议「可以存了」
+1. 只输出一句话，45 字以内，形式是「判定 + 追问」
+2. 是套话 → 点名哪一类（「这是鸡汤/废话/他人观点/泛泛感想」）+ 追问「今天这件具体的事，你自己到底怎么看？」——绝不给改写、绝不给句式、绝不替他把判断说出来
+3. 是自己的判断 → 简短肯定一句（如「有你的视角」），不啰嗦
 4. 不加任何前缀、解释、引号
 
 示例：
 判断「细节决定成败」
-√「这是别人说过的观点，你对今天那件事的具体判断是什么？」
+√「这是别人说过的观点。今天这件事，你自己到底怎么看？」
 
 判断「老王今天迟到是因为他昨晚又喝多了，他这人就是管不住自己」
-√「有你的视角，但'管不住自己'是判断还是标签？」`
+√「有你的视角——但"管不住自己"是观察，还是标签？」`
+
+const SHIP_SYSTEM = `你是「货库」的出货教练。用户正在练「把一条货说出口」——他手上有一条货（一件具体的事 + 他自己的判断），现在要在一个真实场景里，用嘴把它说出来（用户用打字代替说话）。
+
+你要扮演这个场景里的【听众】，不是老师、不是写手、不是评委。
+
+你要做的事：
+1. 第一轮（你第一次开口）：以听众身份，抛一个这个场景下最自然的开场，把话头递给他。比如向领导汇报的场景，你开场「对了，上次那个项目你盯得怎么样了？」——像真实对话一样自然。
+2. 之后每一轮，用户说完一段，你只从下面三件事里挑一件最合适的做：
+   - 追问：他说得含糊的地方，顺着问清（「你说的『信息边界』，具体是哪条信息没拿到？」）
+   - 复述：他绕了，你就用你的话复述一遍，跟他确认（「你的意思是……对吗？」）
+   - 点结构：他缺了结论，就点一句（「你说了过程，那你想让我做什么？」）
+
+铁律（绝不能破）：
+- 绝不替他把话说完，绝不给他一句「你可以这样说」的完整示范
+- 绝不评价他说得好不好、绝不打分、绝不表扬式点评
+- 始终以听众身份接话，像真人对话，不要变成「教练点评」
+- 每次只回一句话，60 字以内`
 
 export function loadApiConfig(): ApiConfig {
   try {
@@ -104,7 +144,9 @@ export function hasApiKey(): boolean {
   return loadApiConfig().apiKey.trim() !== ''
 }
 
-function buildRequest(mode: CoachMode, payload: CoachPayload, config: ApiConfig) {
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+
+function buildMessages(mode: CoachMode, payload: CoachPayload) {
   let system: string
   let user: string
   if (mode === 'dig') {
@@ -117,22 +159,13 @@ function buildRequest(mode: CoachMode, payload: CoachPayload, config: ApiConfig)
     system = CLICHE_SYSTEM
     user = `一句话判断：${payload.judgment?.trim() || ''}`
   }
-  const base = config.baseUrl.trim().replace(/\/+$/, '')
   return {
-    url: `${base}/chat/completions`,
-    body: {
-      model: config.model.trim(),
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      // V4-Flash 默认开 thinking + effort=high，会吃光 max_tokens 预算导致 content 为空。
-      // dig/cliche 是简单任务，不需要思考链；关掉 thinking 让 temperature 重新生效。
-      // dig 0.7 保证多轮追问角度有差异（否则低温度下问题高度趋同）；cliche 0.5 判定更稳。
-      thinking: { type: 'disabled' },
-      max_tokens: 1024,
-      temperature: mode === 'dig' ? 0.7 : 0.5,
-    },
+    messages: [
+      { role: 'system' as const, content: system },
+      { role: 'user' as const, content: user },
+    ],
+    temperature: mode === 'dig' ? 0.7 : 0.5,
+    maxLen: mode === 'dig' ? 40 : 60,
   }
 }
 
@@ -177,7 +210,7 @@ function cleanCoachReply(raw: string, maxLen = 40): string {
   s = s.replace(/^(追问|问题|AI|教练|答|回复|问)[:：]\s*/i, '')
   // 剥离开头/结尾引号
   s = s.replace(/^["「『"'"""\s]+/, '').replace(/["」』"'"""\s]+$/, '')
-  // 超长截到第一个问号或句号（dig 40 / cliche 60，cliche 允许「判定+建议」两句）
+  // 超长截到第一个问号或句号
   if (s.length > maxLen) {
     const m = s.slice(0, maxLen).match(/^[^。？?！!]+[。？?！!]/)
     if (m) s = m[0]
@@ -185,10 +218,10 @@ function cleanCoachReply(raw: string, maxLen = 40): string {
   return s.trim()
 }
 
-export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise<string> {
+/** 加载 API 配置：本地 → 云端兜底（跨设备场景，登录后自动带上） */
+async function resolveConfig(): Promise<ApiConfig> {
   let config = loadApiConfig()
   if (!config.apiKey.trim()) {
-    // 本地无 key：尝试从云端同步（跨设备场景，登录后自动带上）
     try {
       const cloud = await loadAiSettings()
       if (cloud && cloud.apiKey.trim()) {
@@ -202,7 +235,22 @@ export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise
   if (!config.apiKey.trim()) {
     throw new Error('还没配置 API Key，请先到设置里填写')
   }
-  const { url, body } = buildRequest(mode, payload, config)
+  return config
+}
+
+/** 通用：发 messages 请求 + 重试 + 后处理 */
+async function chat(messages: ChatMessage[], config: ApiConfig, temperature: number, maxLen: number): Promise<string> {
+  const base = config.baseUrl.trim().replace(/\/+$/, '')
+  const url = `${base}/chat/completions`
+  const body = {
+    model: config.model.trim(),
+    messages,
+    // V4-Flash 默认开 thinking + effort=high，会吃光 max_tokens 预算导致 content 为空。
+    // dig/cliche/ship 都是简单任务，不需要思考链；关掉 thinking 让 temperature 重新生效。
+    thinking: { type: 'disabled' },
+    max_tokens: 1024,
+    temperature,
+  }
   const apiKey = config.apiKey.trim()
 
   for (let attempt = 0; ; attempt++) {
@@ -216,12 +264,44 @@ export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise
       await sleep(300 * (attempt + 1))
       continue
     }
-    if (content) return cleanCoachReply(content, mode === 'dig' ? 40 : 60)
+    if (content) return cleanCoachReply(content, maxLen)
     // 空内容：重试
     if (attempt >= MAX_RETRIES) break
     await sleep(300 * (attempt + 1))
   }
   throw new Error('AI 返回为空，请稍后再试')
+}
+
+export async function callCoach(mode: CoachMode, payload: CoachPayload): Promise<string> {
+  const config = await resolveConfig()
+  const { messages, temperature, maxLen } = buildMessages(mode, payload)
+  return chat(messages, config, temperature, maxLen)
+}
+
+/** 出货练习（P3）：AI 扮听众，多轮对话，只追问/复述/点结构，绝不代写 */
+export async function shipCoach(input: {
+  entry: { happened: string; thought: string; judgment: string }
+  scenario: ShipScenario
+  history: ShipMessage[]
+}): Promise<string> {
+  const config = await resolveConfig()
+  const e = input.entry
+  const context = [
+    `【场景】${input.scenario.name}，听众是「${input.scenario.role}」。${input.scenario.setting}`,
+    ``,
+    `【我的货】`,
+    `发生了什么：${e.happened || '（无）'}`,
+    `我怎么想：${e.thought || '（无）'}`,
+    `一句话判断：${e.judgment || '（无）'}`,
+    ``,
+    input.history.length === 0 ? '请以听众身份，用一句自然的开场把话头递给我。' : '继续这场对话。',
+  ].join('\n')
+  const messages: ChatMessage[] = [
+    { role: 'system', content: SHIP_SYSTEM },
+    { role: 'user', content: context },
+    ...input.history.map((h) => ({ role: h.role, content: h.content })),
+  ]
+  return chat(messages, config, 0.7, 60)
 }
 
 /** 测试连接：发一条最小请求验证配置是否可用 */

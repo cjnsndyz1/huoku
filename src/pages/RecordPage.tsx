@@ -48,6 +48,12 @@ const STEPS = [
 // P0-2：草稿持久化——写一半刷新/切页/误关不丢
 const DRAFT_KEY = 'biaodaxunlian:record-draft'
 
+/** 一轮「AI 问 → 我答」的挖掘记录 */
+interface DigRound {
+  q: string
+  a: string
+}
+
 interface Draft {
   happened: string
   thought: string
@@ -55,6 +61,7 @@ interface Draft {
   tag: Tag
   savedAt: number
   hadImage?: boolean
+  digRounds?: DigRound[]
 }
 
 function readDraft(): Draft | null {
@@ -70,10 +77,32 @@ function readDraft(): Draft | null {
     ) {
       return null
     }
+    if (d.digRounds != null && !Array.isArray(d.digRounds)) return null
     return d
   } catch {
     return null
   }
+}
+
+// 把「我自己想的」+「AI 问→我答」拼成完整上下文，让 AI 基于最新内容提问
+function buildThoughtContext(thought: string, rounds: DigRound[]): string {
+  const parts: string[] = []
+  if (thought.trim()) parts.push(`我自己的初始想法：${thought.trim()}`)
+  for (const r of rounds) {
+    if (r.q.trim()) parts.push(`问：${r.q.trim()}`)
+    if (r.a.trim()) parts.push(`答：${r.a.trim()}`)
+  }
+  return parts.join('\n')
+}
+
+// 保存时：主框想法在前，各轮「答」接在后面（答才是我的货；问是 AI 的引导，不落库）
+function buildFinalThought(thought: string, rounds: DigRound[]): string {
+  const parts: string[] = []
+  if (thought.trim()) parts.push(thought.trim())
+  for (const r of rounds) {
+    if (r.a.trim()) parts.push(r.a.trim())
+  }
+  return parts.join('\n\n')
 }
 
 export default function RecordPage() {
@@ -103,14 +132,27 @@ export default function RecordPage() {
   const [imageError, setImageError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // 挖掘问答流：主框（thought）之外，AI 问 → 我答 的逐轮记录，与主框分开展示、可对照
+  const [digRounds, setDigRounds] = useState<DigRound[]>(draft?.digRounds ?? [])
+  const [currentA, setCurrentA] = useState('')
+
   // 防抖写入草稿；全空则移除
   const draftTimer = useRef<number | undefined>(undefined)
   useEffect(() => {
     if (draftTimer.current) window.clearTimeout(draftTimer.current)
     draftTimer.current = window.setTimeout(() => {
       try {
-        if (happened.trim() || thought.trim() || judgment.trim()) {
-          const d: Draft = { happened, thought, judgment, tag, savedAt: Date.now(), hadImage: !!imageBlob }
+        const hasDig = digRounds.length > 0
+        if (happened.trim() || thought.trim() || judgment.trim() || hasDig) {
+          const d: Draft = {
+            happened,
+            thought,
+            judgment,
+            tag,
+            savedAt: Date.now(),
+            hadImage: !!imageBlob,
+            digRounds,
+          }
           localStorage.setItem(DRAFT_KEY, JSON.stringify(d))
         } else {
           localStorage.removeItem(DRAFT_KEY)
@@ -122,7 +164,7 @@ export default function RecordPage() {
     return () => {
       if (draftTimer.current) window.clearTimeout(draftTimer.current)
     }
-  }, [happened, thought, judgment, tag, imageBlob])
+  }, [happened, thought, judgment, tag, imageBlob, digRounds])
 
   const clearDraft = () => {
     try {
@@ -134,6 +176,9 @@ export default function RecordPage() {
     setThought('')
     setJudgment('')
     setTag('生活')
+    setDigRounds([])
+    setDigResult('')
+    setCurrentA('')
     setRestored(false)
   }
 
@@ -161,15 +206,28 @@ export default function RecordPage() {
   const dig = async () => {
     setDigLoading(true)
     setDigError('')
-    setDigResult('')
     try {
-      const q = await callCoach('dig', { happened, thought, lastQuestion: digResult || undefined })
+      const q = await callCoach('dig', {
+        happened,
+        thought: buildThoughtContext(thought, digRounds),
+        lastQuestion:
+          digRounds.length > 0 ? digRounds[digRounds.length - 1].q : digResult || undefined,
+      })
       setDigResult(q)
+      setCurrentA('')
     } catch (e) {
       setDigError(e instanceof Error ? e.message : '调用失败')
     } finally {
       setDigLoading(false)
     }
+  }
+
+  // 把 AI 当前抛的问题 + 我的回答，记成一轮问答（不覆盖主框，两相对照）
+  const commitAnswer = () => {
+    if (!digResult.trim() || !currentA.trim()) return
+    setDigRounds((prev) => [...prev, { q: digResult.trim(), a: currentA.trim() }])
+    setDigResult('')
+    setCurrentA('')
   }
 
   const checkCliche = async () => {
@@ -220,7 +278,7 @@ export default function RecordPage() {
         id: crypto.randomUUID(),
         date: todayStr(),
         happened: happened.trim(),
-        thought: thought.trim(),
+        thought: buildFinalThought(thought, digRounds),
         judgment: judgment.trim(),
         tag,
         createdAt: Date.now(),
@@ -351,7 +409,7 @@ export default function RecordPage() {
               <textarea
                 value={thought}
                 onChange={(e) => setThought(e.target.value)}
-                placeholder="往下挖一层：为什么会这样？我当时什么感受？"
+                placeholder="先写你自己此刻的想法，哪怕一句。没有就先空着，交给 AI 问"
                 rows={3}
               />
             </label>
@@ -360,10 +418,41 @@ export default function RecordPage() {
               <button type="button" className="btn btn-ghost coach-btn" disabled={digLoading} onClick={dig}>
                 <Sparkles size={16} /> {digLoading ? 'AI 正在想…' : 'AI 帮我挖'}
               </button>
-              <p className="coach-hint">基于「发生了什么」和「我怎么想」提问，挖得更深一层</p>
-              {digResult && <p className="coach-result">{digResult}</p>}
+              <p className="coach-hint">AI 基于你写的 + 之前挖的继续往下问；答完可再挖，逐层深入</p>
               {digError && <p className="coach-error">{digError}</p>}
             </div>
+
+            {digResult && (
+              <div className="dig-current">
+                <p className="dig-q">AI 问：{digResult}</p>
+                <textarea
+                  value={currentA}
+                  onChange={(e) => setCurrentA(e.target.value)}
+                  placeholder="顺着这个问题，写下你的回答…"
+                  rows={2}
+                />
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={!currentA.trim()}
+                  onClick={commitAnswer}
+                >
+                  <Check size={16} /> 记下这条回答
+                </button>
+              </div>
+            )}
+
+            {digRounds.length > 0 && (
+              <div className="dig-history">
+                <p className="dig-history-title">挖出来的（与上面「我怎么想」对照）</p>
+                {digRounds.map((r, i) => (
+                  <div key={i} className="dig-round">
+                    <p className="dig-q">问：{r.q}</p>
+                    <p className="dig-a">答：{r.a}</p>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="step-nav">
               <button type="button" className="btn btn-ghost" onClick={() => setStep(1)}>
@@ -383,7 +472,7 @@ export default function RecordPage() {
               <textarea
                 value={judgment}
                 onChange={(e) => setJudgment(e.target.value)}
-                placeholder="我的答案，不是套话。比如「它不是 X，而是 Y」"
+                placeholder="我的答案，不是套话。就写你对这件事最真实的一句判断"
                 rows={2}
               />
             </label>

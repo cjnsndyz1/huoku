@@ -11,6 +11,7 @@ import {
   CircleAlert,
   Save,
   Feather,
+  Mic,
 } from 'lucide-react'
 import { TAGS, type Tag, type HuoEntry } from '../types'
 import { formatDate } from '../utils/storage'
@@ -19,6 +20,7 @@ import { deleteEntry, saveEntry } from '../services/dataService'
 import { callCoach } from '../services/coachService'
 import { useEntries } from '../hooks/useEntries'
 import SetupGuide from '../components/SetupGuide'
+import ShipPractice from '../components/ShipPractice'
 
 function EntryImage({ imageId, small }: { imageId: string; small?: boolean }) {
   const [url, setUrl] = useState<string>()
@@ -89,10 +91,12 @@ function EntryCard({
   entry,
   onDelete,
   onSaved,
+  onShip,
 }: {
   entry: HuoEntry
   onDelete: (entry: HuoEntry) => void
   onSaved: () => void
+  onShip: (entry: HuoEntry) => void
 }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -247,6 +251,9 @@ function EntryCard({
               )}
 
               <div className="entry-actions">
+                <button type="button" className="btn btn-primary entry-action-btn" onClick={() => onShip(entry)}>
+                  <Mic size={15} /> 说出来
+                </button>
                 <button type="button" className="btn btn-ghost entry-action-btn" onClick={startEdit}>
                   <Pencil size={15} /> 编辑
                 </button>
@@ -279,6 +286,8 @@ function EntryCard({
 export default function LibraryPage() {
   const [filter, setFilter] = useState<Tag | '全部'>('全部')
   const { entries, loading, error, needsSetup, refresh } = useEntries()
+  // 出货练习（P3）：当前正在「说」的货
+  const [shipEntry, setShipEntry] = useState<HuoEntry | null>(null)
 
   // P0-1：删除前确认 + 删除后可撤销
   const [pendingDelete, setPendingDelete] = useState<HuoEntry | null>(null)
@@ -399,7 +408,7 @@ export default function LibraryPage() {
       ) : (
         <div className="entry-list">
           {list.map((e) => (
-            <EntryCard key={e.id} entry={e} onDelete={setPendingDelete} onSaved={refresh} />
+            <EntryCard key={e.id} entry={e} onDelete={setPendingDelete} onSaved={refresh} onShip={setShipEntry} />
           ))}
         </div>
       )}
@@ -444,6 +453,8 @@ export default function LibraryPage() {
           </button>
         </div>
       )}
+
+      {shipEntry && <ShipPractice entry={shipEntry} onClose={() => setShipEntry(null)} />}
     </div>
   )
 }

@@ -600,6 +600,55 @@ textarea::placeholder {
   color: var(--cinnabar);
 }
 
+/* ============ 挖掘问答流（step 2 拆分：自己想的 vs AI 挖的） ============ */
+.dig-current {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.dig-q {
+  margin: 0;
+  font-size: 15px;
+  color: var(--accent-strong);
+  font-weight: 500;
+  font-family: var(--font-serif);
+}
+
+.dig-a {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.7;
+}
+
+.dig-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.dig-history-title {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.dig-round {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--paper-light);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
 /* ============ 回看：今日新想法（P1-6） ============ */
 .new-idea {
   margin-top: 32px;
@@ -1234,4 +1283,196 @@ textarea::placeholder {
 
 .draft-clear:hover {
   text-decoration: underline;
+}
+
+/* ============ 出货练习（P3）：把货说出口 ============ */
+.ship {
+  width: 100%;
+  max-width: 520px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-light);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgba(43, 38, 32, 0.18);
+  overflow: hidden;
+  animation: modal-in 0.18s ease;
+}
+
+.ship-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 8px;
+}
+
+.ship-title {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+
+.ship-close {
+  border: none;
+  background: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 6px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ship-close:hover {
+  background: var(--paper-deep);
+}
+
+.ship-hint {
+  margin: 0;
+  padding: 0 20px 12px;
+  font-size: 13px;
+  color: var(--ink-faint);
+  line-height: 1.6;
+}
+
+.ship-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.ship-scenarios .tag:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ship-entry {
+  margin: 0 20px 12px;
+  padding: 10px 14px;
+  background: var(--paper-deep);
+  border-left: 2px solid var(--cinnabar);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.ship-entry-label {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.ship-entry-text {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+.ship-log {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 20px 12px;
+  min-height: 140px;
+}
+
+.ship-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 88%;
+}
+
+.ship-msg-ai {
+  align-self: flex-start;
+}
+
+.ship-msg-me {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.ship-msg-role {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.ship-msg-text {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ship-msg-ai .ship-msg-text {
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) var(--radius);
+  color: var(--accent-strong);
+}
+
+.ship-msg-me .ship-msg-text {
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+
+.ship-msg-dots {
+  color: var(--ink-faint);
+}
+
+.ship-start {
+  margin: 4px 20px 16px;
+  width: calc(100% - 40px);
+}
+
+.ship-input {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.ship-input textarea {
+  flex: 1;
+  resize: none;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  line-height: 1.6;
+  outline: none;
+}
+
+.ship-input textarea:focus {
+  border-color: var(--accent);
+}
+
+.ship-input .btn {
+  flex-shrink: 0;
+}
+
+.ship-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 16px;
+}
+
+.ship-rounds {
+  font-size: 12px;
+  color: var(--ink-faint);
 }
