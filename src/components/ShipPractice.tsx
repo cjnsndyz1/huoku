@@ -91,6 +91,40 @@ export default function ShipPractice({ entry, onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // 场景选择与货预览：未开始时放进可滚动区（长货下「开始」按钮仍常驻底部），开始后固定在顶部
+  const preBlock = (
+    <>
+      <p className="ship-hint">
+        挑个真实场景，AI 扮听众只追问、复述、点结构，绝不替你写。说多少算多少，卡壳就说「不知道」。
+      </p>
+
+      <div className="ship-scenarios">
+        <button type="button" className="btn btn-ghost" onClick={() => setVoiceOpen(true)}>
+          <Copy size={14} /> 先口头说一遍：复制语音提示词，去语音对练
+        </button>
+      </div>
+
+      <div className="ship-scenarios">
+        {SHIP_SCENARIOS.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={`tag ${scenario.id === s.id ? 'tag-active' : ''}`}
+            disabled={started}
+            onClick={() => pickScenario(s)}
+          >
+            {s.name}
+          </button>
+        ))}
+      </div>
+
+      <div className="ship-entry">
+        <span className="ship-entry-label">你要说的货</span>
+        <p className="ship-entry-text">{entry.judgment || entry.thought || entry.happened}</p>
+      </div>
+    </>
+  )
+
   return (
     <div className="modal-mask" onClick={onClose}>
       <div className="ship" role="dialog" aria-modal="true" aria-label="出货练习" onClick={(e) => e.stopPropagation()}>
@@ -101,86 +135,63 @@ export default function ShipPractice({ entry, onClose }: Props) {
           </button>
         </div>
 
-        <p className="ship-hint">
-          挑个真实场景，AI 扮听众只追问、复述、点结构，绝不替你写。说多少算多少，卡壳就说「不知道」。
-        </p>
-
-        <div className="ship-scenarios">
-          <button type="button" className="btn btn-ghost" onClick={() => setVoiceOpen(true)}>
-            <Copy size={14} /> 先口头说一遍：复制语音提示词，去语音对练
-          </button>
-        </div>
-
-        <div className="ship-scenarios">
-          {SHIP_SCENARIOS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={`tag ${scenario.id === s.id ? 'tag-active' : ''}`}
-              disabled={started}
-              onClick={() => pickScenario(s)}
-            >
-              {s.name}
+        {!started ? (
+          <>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{preBlock}</div>
+            {err && <p className="coach-error">{err}</p>}
+            <button type="button" className="btn btn-primary ship-start" disabled={loading} onClick={start}>
+              <Mic size={16} /> {loading ? '听众就位…' : `开始，向「${scenario.role}」说`}
             </button>
-          ))}
-        </div>
+          </>
+        ) : (
+          <>
+            {preBlock}
 
-        <div className="ship-entry">
-          <span className="ship-entry-label">你要说的货</span>
-          <p className="ship-entry-text">{entry.judgment || entry.thought || entry.happened}</p>
-        </div>
-
-        {history.length > 0 && (
-          <div className="ship-log">
-            {history.map((m, i) => (
-              <div key={i} className={`ship-msg ${m.role === 'assistant' ? 'ship-msg-ai' : 'ship-msg-me'}`}>
-                <span className="ship-msg-role">{m.role === 'assistant' ? scenario.role : '我'}</span>
-                <p className="ship-msg-text">{m.content}</p>
-              </div>
-            ))}
-            {loading && (
-              <div className="ship-msg ship-msg-ai">
-                <span className="ship-msg-role">{scenario.role}</span>
-                <p className="ship-msg-text ship-msg-dots">…</p>
+            {history.length > 0 && (
+              <div className="ship-log">
+                {history.map((m, i) => (
+                  <div key={i} className={`ship-msg ${m.role === 'assistant' ? 'ship-msg-ai' : 'ship-msg-me'}`}>
+                    <span className="ship-msg-role">{m.role === 'assistant' ? scenario.role : '我'}</span>
+                    <p className="ship-msg-text">{m.content}</p>
+                  </div>
+                ))}
+                {loading && (
+                  <div className="ship-msg ship-msg-ai">
+                    <span className="ship-msg-role">{scenario.role}</span>
+                    <p className="ship-msg-text ship-msg-dots">…</p>
+                  </div>
+                )}
+                <div ref={bottomRef} />
               </div>
             )}
-            <div ref={bottomRef} />
-          </div>
-        )}
 
-        {err && <p className="coach-error">{err}</p>}
+            {err && <p className="coach-error">{err}</p>}
 
-        {!started ? (
-          <button type="button" className="btn btn-primary ship-start" disabled={loading} onClick={start}>
-            <Mic size={16} /> {loading ? '听众就位…' : `开始，向「${scenario.role}」说`}
-          </button>
-        ) : (
-          <div className="ship-input">
-            <textarea
-              rows={2}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={`对「${scenario.role}」说…`}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  send()
-                }
-              }}
-            />
-            <button type="button" className="btn btn-primary" disabled={loading || !input.trim()} onClick={send}>
-              <Send size={16} /> 说
-            </button>
-          </div>
-        )}
+            <div className="ship-input">
+              <textarea
+                rows={2}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={`对「${scenario.role}」说…`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    send()
+                  }
+                }}
+              />
+              <button type="button" className="btn btn-primary" disabled={loading || !input.trim()} onClick={send}>
+                <Send size={16} /> 说
+              </button>
+            </div>
 
-        {started && (
-          <div className="ship-foot">
-            <button type="button" className="btn btn-ghost" onClick={reset}>
-              <RefreshCw size={14} /> 换场景重来
-            </button>
-            <span className="ship-rounds">{rounds > 0 ? `已说 ${rounds} 轮` : '说吧，别怕说不好'}</span>
-          </div>
+            <div className="ship-foot">
+              <button type="button" className="btn btn-ghost" onClick={reset}>
+                <RefreshCw size={14} /> 换场景重来
+              </button>
+              <span className="ship-rounds">{rounds > 0 ? `已说 ${rounds} 轮` : '说吧，别怕说不好'}</span>
+            </div>
+          </>
         )}
       </div>
 

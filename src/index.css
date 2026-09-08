@@ -1371,6 +1371,9 @@ textarea::placeholder {
   font-size: 14px;
   color: var(--ink);
   line-height: 1.6;
+  /* 长货不挤占对话/操作区：超出则在小框内滚动 */
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .ship-log {
@@ -1475,4 +1478,18 @@ textarea::placeholder {
 .ship-rounds {
   font-size: 12px;
   color: var(--ink-faint);
+}
+
+/* ============ 小屏弹窗适配（置于文件末尾，确保覆盖上方基础规则） ============ */
+@media (max-width: 480px) {
+  /* 收窄遮罩留白、让弹窗用足屏幕高度，配合固定头/滚动体/固定底栏，保证底部按钮不被裁切 */
+  .modal-mask {
+    padding: 12px;
+  }
+  .ship {
+    max-height: 92vh;
+  }
+  .modal {
+    padding: 18px;
+  }
 }

@@ -22,6 +22,7 @@ const MODES: { id: ShipPromptMode; name: string }[] = [
 /**
  * F10 语音提示词出口弹窗（V2.1）：选场景 + 选强度 → 一键复制提示词 → 去外部语音产品亲口开口。
  * 货库不做语音对练；本弹窗只产出纯文本提示词，不调 AI、不落库、不留历史。
+ * 布局：固定头部 + 可滚动主体 + 固定底部操作区，保证小屏上复制按钮始终可见可点。
  */
 export default function VoicePromptModal({ entry, onClose }: Props) {
   const [scenario, setScenario] = useState<ShipPromptScenario>('report')
@@ -57,7 +58,7 @@ export default function VoicePromptModal({ entry, onClose }: Props) {
   return (
     <div className="modal-mask" onClick={onClose}>
       <div
-        className="ship"
+        className="ship voice-ship"
         role="dialog"
         aria-modal="true"
         aria-label="复制语音提示词"
@@ -70,82 +71,87 @@ export default function VoicePromptModal({ entry, onClose }: Props) {
           </button>
         </div>
 
-        <p className="ship-hint">
-          选好场景和强度，复制后到豆包语音/视频对话里粘贴，亲口说满 60 秒。实时对练和打断交给外部产品，货库只帮你把货和规则带齐。
-        </p>
-
-        <div className="ship-scenarios">
-          {VOICE_SCENARIOS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={`tag ${scenario === s.id ? 'tag-active' : ''}`}
-              onClick={() => setScenario(s.id)}
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
-
-        <div className="ship-scenarios">
-          {MODES.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              className={`tag ${mode === m.id ? 'tag-active' : ''}`}
-              onClick={() => setMode(m.id)}
-            >
-              {m.name}
-            </button>
-          ))}
-        </div>
-
-        <div className="ship-entry">
-          <span className="ship-entry-label">你要说的货</span>
-          <p className="ship-entry-text">{entry.judgment || entry.thought || entry.happened}</p>
-        </div>
-
-        <div style={{ padding: '0 20px 12px' }}>
-          <textarea
-            ref={previewRef}
-            readOnly
-            rows={9}
-            value={prompt}
-            aria-label="提示词预览"
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              resize: 'vertical',
-              padding: '10px 12px',
-              fontSize: '12.5px',
-              lineHeight: 1.6,
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--ink)',
-              background: 'var(--paper)',
-              border: '1px solid var(--line)',
-              borderRadius: 'var(--radius-sm)',
-              outline: 'none',
-            }}
-          />
-        </div>
-
-        <button type="button" className="btn btn-primary ship-start" onClick={copy}>
-          {copied ? (
-            <>
-              <Check size={16} /> 已复制，去开口说 60 秒
-            </>
-          ) : (
-            <>
-              <Copy size={16} /> 复制提示词
-            </>
-          )}
-        </button>
-
-        {manual && (
-          <p className="ship-hint" style={{ paddingBottom: 14 }}>
-            自动复制没成功：请在上方文本框全选（Ctrl+A）后手动复制（Ctrl+C），再粘贴到语音产品。
+        {/* 可滚动主体：min-height:0 让 flex 子项可收缩，内容超高时只在这一区域滚动 */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          <p className="ship-hint">
+            选好场景和强度，复制后到豆包语音/视频对话里粘贴，亲口说满 60 秒。实时对练和打断交给外部产品，货库只帮你把货和规则带齐。
           </p>
-        )}
+
+          <div className="ship-scenarios">
+            {VOICE_SCENARIOS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`tag ${scenario === s.id ? 'tag-active' : ''}`}
+                onClick={() => setScenario(s.id)}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="ship-scenarios">
+            {MODES.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className={`tag ${mode === m.id ? 'tag-active' : ''}`}
+                onClick={() => setMode(m.id)}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="ship-entry">
+            <span className="ship-entry-label">你要说的货</span>
+            <p className="ship-entry-text">{entry.judgment || entry.thought || entry.happened}</p>
+          </div>
+
+          <div style={{ padding: '0 20px 14px' }}>
+            <textarea
+              ref={previewRef}
+              readOnly
+              rows={6}
+              value={prompt}
+              aria-label="提示词预览"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                resize: 'vertical',
+                padding: '10px 12px',
+                fontSize: '13px',
+                lineHeight: 1.6,
+                fontFamily: 'var(--font-sans)',
+                color: 'var(--ink)',
+                background: 'var(--paper)',
+                border: '1px solid var(--line)',
+                borderRadius: 'var(--radius-sm)',
+                outline: 'none',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* 固定底部操作区：不参与滚动，任何屏高下按钮都完整可见 */}
+        <div style={{ borderTop: '1px solid var(--line)', padding: '12px 20px 16px' }}>
+          <button type="button" className="btn btn-primary" style={{ width: '100%' }} onClick={copy}>
+            {copied ? (
+              <>
+                <Check size={16} /> 已复制，去开口说 60 秒
+              </>
+            ) : (
+              <>
+                <Copy size={16} /> 复制提示词
+              </>
+            )}
+          </button>
+          {manual && (
+            <p style={{ margin: '8px 0 0', fontSize: '12px', lineHeight: 1.5, color: 'var(--ink-faint)' }}>
+              自动复制没成功：请在上方文本框全选（Ctrl+A）后手动复制（Ctrl+C），再粘贴到语音产品。
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )
