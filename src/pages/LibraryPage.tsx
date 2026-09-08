@@ -12,6 +12,7 @@ import {
   Save,
   Feather,
   Mic,
+  Copy,
 } from 'lucide-react'
 import { TAGS, type Tag, type HuoEntry } from '../types'
 import { formatDate } from '../utils/storage'
@@ -21,6 +22,7 @@ import { callCoach } from '../services/coachService'
 import { useEntries } from '../hooks/useEntries'
 import SetupGuide from '../components/SetupGuide'
 import ShipPractice from '../components/ShipPractice'
+import VoicePromptModal from '../components/VoicePromptModal'
 
 function EntryImage({ imageId, small }: { imageId: string; small?: boolean }) {
   const [url, setUrl] = useState<string>()
@@ -92,11 +94,13 @@ function EntryCard({
   onDelete,
   onSaved,
   onShip,
+  onVoice,
 }: {
   entry: HuoEntry
   onDelete: (entry: HuoEntry) => void
   onSaved: () => void
   onShip: (entry: HuoEntry) => void
+  onVoice: (entry: HuoEntry) => void
 }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -254,6 +258,9 @@ function EntryCard({
                 <button type="button" className="btn btn-primary entry-action-btn" onClick={() => onShip(entry)}>
                   <Mic size={15} /> 说出来
                 </button>
+                <button type="button" className="btn btn-ghost entry-action-btn" onClick={() => onVoice(entry)}>
+                  <Copy size={15} /> 语音提示词
+                </button>
                 <button type="button" className="btn btn-ghost entry-action-btn" onClick={startEdit}>
                   <Pencil size={15} /> 编辑
                 </button>
@@ -288,6 +295,8 @@ export default function LibraryPage() {
   const { entries, loading, error, needsSetup, refresh } = useEntries()
   // 出货练习（P3）：当前正在「说」的货
   const [shipEntry, setShipEntry] = useState<HuoEntry | null>(null)
+  // F10 语音提示词出口：当前要复制提示词去外部语音对练的货
+  const [voiceEntry, setVoiceEntry] = useState<HuoEntry | null>(null)
 
   // P0-1：删除前确认 + 删除后可撤销
   const [pendingDelete, setPendingDelete] = useState<HuoEntry | null>(null)
@@ -408,7 +417,7 @@ export default function LibraryPage() {
       ) : (
         <div className="entry-list">
           {list.map((e) => (
-            <EntryCard key={e.id} entry={e} onDelete={setPendingDelete} onSaved={refresh} onShip={setShipEntry} />
+            <EntryCard key={e.id} entry={e} onDelete={setPendingDelete} onSaved={refresh} onShip={setShipEntry} onVoice={setVoiceEntry} />
           ))}
         </div>
       )}
@@ -455,6 +464,8 @@ export default function LibraryPage() {
       )}
 
       {shipEntry && <ShipPractice entry={shipEntry} onClose={() => setShipEntry(null)} />}
+
+      {voiceEntry && <VoicePromptModal entry={voiceEntry} onClose={() => setVoiceEntry(null)} />}
     </div>
   )
 }

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Send, Mic, RefreshCw } from 'lucide-react'
+import { X, Send, Mic, RefreshCw, Copy } from 'lucide-react'
 import type { HuoEntry } from '../types'
 import { SHIP_SCENARIOS, shipCoach, type ShipMessage, type ShipScenario } from '../services/coachService'
+import VoicePromptModal from './VoicePromptModal'
 
 interface Props {
   entry: HuoEntry
@@ -21,6 +22,8 @@ export default function ShipPractice({ entry, onClose }: Props) {
   const [err, setErr] = useState('')
   const [started, setStarted] = useState(false)
   const [rounds, setRounds] = useState(0)
+  // F10：改用外部语音对练时弹出的提示词出口
+  const [voiceOpen, setVoiceOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const entryContent = {
@@ -103,6 +106,12 @@ export default function ShipPractice({ entry, onClose }: Props) {
         </p>
 
         <div className="ship-scenarios">
+          <button type="button" className="btn btn-ghost" onClick={() => setVoiceOpen(true)}>
+            <Copy size={14} /> 先口头说一遍：复制语音提示词，去语音对练
+          </button>
+        </div>
+
+        <div className="ship-scenarios">
           {SHIP_SCENARIOS.map((s) => (
             <button
               key={s.id}
@@ -174,6 +183,8 @@ export default function ShipPractice({ entry, onClose }: Props) {
           </div>
         )}
       </div>
+
+      {voiceOpen && <VoicePromptModal entry={entry} onClose={() => setVoiceOpen(false)} />}
     </div>
   )
 }
