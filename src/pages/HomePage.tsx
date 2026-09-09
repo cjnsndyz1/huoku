@@ -1,17 +1,32 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Feather, Library, CalendarCheck, TrendingUp, Trophy, Settings, Check } from 'lucide-react'
+import { Feather, Library, CalendarCheck, TrendingUp, Trophy, Settings, Check, X } from 'lucide-react'
 import { useEntries } from '../hooks/useEntries'
 import { computeStats, streakText } from '../utils/stats'
 import { hasApiKey } from '../services/coachService'
 import SetupGuide from '../components/SetupGuide'
 
 const MILESTONES = [100, 50, 10]
+const JUST_REGISTERED_KEY = 'biaodaxunlian:just-registered'
 
 export default function HomePage() {
   const { entries, loading, error, needsSetup } = useEntries()
   const stats = computeStats(entries)
   const milestone = MILESTONES.find((m) => stats.totalCount >= m)
   const recordedToday = stats.todayCount > 0
+  // 注册自动登录后的一次性欢迎条：说明空货库正常，避免「我的货呢」恐慌
+  const [showWelcome, setShowWelcome] = useState(false)
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(JUST_REGISTERED_KEY)) {
+        setShowWelcome(true)
+        localStorage.removeItem(JUST_REGISTERED_KEY)
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }, [])
 
   if (needsSetup) return <SetupGuide />
   if (error) {
@@ -30,6 +45,23 @@ export default function HomePage() {
       <p className="brand">货库</p>
       <h1 className="title">把今天，说成一句自己的话。</h1>
       <p className="subtitle">每天挖一件小事，记下它，攒成你的货库。</p>
+
+      {showWelcome && (
+        <div className="welcome-note" role="status">
+          <span>
+            新账号已就位——货库从今天开始攒。
+            <small>如果是误注册：退出后用原邮箱登录，老账号的货都还在。</small>
+          </span>
+          <button
+            type="button"
+            className="welcome-close"
+            onClick={() => setShowWelcome(false)}
+            aria-label="关闭欢迎提示"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <p className="today-banner today-loading">加载中…</p>

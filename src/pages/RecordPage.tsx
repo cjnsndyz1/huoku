@@ -84,6 +84,23 @@ function readDraft(): Draft | null {
   }
 }
 
+// B1：草稿是否今天写的——跨天残稿若直接保存会被记成「今天」，污染今日已记与连续天数
+function isSameDay(ts: number): boolean {
+  const d = new Date(ts)
+  const now = new Date()
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  )
+}
+
+function draftDateLabel(ts: number): string {
+  const d = new Date(ts)
+  const md = `${d.getMonth() + 1} 月 ${d.getDate()} 日`
+  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()} 年 ${md}`
+}
+
 // 把「我自己想的」+「AI 问→我答」拼成完整上下文，让 AI 基于最新内容提问
 function buildThoughtContext(thought: string, rounds: DigRound[]): string {
   const parts: string[] = []
@@ -121,6 +138,9 @@ export default function RecordPage() {
   // P1-5：今日三问只当提示，不把问句填进内容（否则不改就保存会把问句存成货）
   const [activeQuestion, setActiveQuestion] = useState('')
   const happenedRef = useRef<HTMLTextAreaElement>(null)
+
+  // B1：草稿是不是今天写的——跨天残稿保存会被记成「今天」，提示条要换成朱砂警示
+  const draftIsToday = !draft?.savedAt || isSameDay(draft.savedAt)
 
   const pickQuestion = (q: string) => {
     setActiveQuestion(q)
@@ -323,10 +343,21 @@ export default function RecordPage() {
 
       <div className="form">
         {restored && (
-          <div className="draft-note">
+          <div className={`draft-note ${draftIsToday ? '' : 'draft-note-stale'}`}>
             <span>
-              上次写了一半的草稿已找回
-              {draft?.hadImage && !imageBlob ? '（配图没保住，可重新拍一张）' : ''}
+              {draftIsToday ? (
+                <>上次写了一半的草稿已找回</>
+              ) : (
+                <>
+                  这是{draft?.savedAt ? ` ${draftDateLabel(draft.savedAt)} ` : ' '}写了一半的草稿——
+                  现在保存会记成「今天」。接着写，还是清掉？
+                </>
+              )}
+              {draft?.hadImage && !imageBlob
+                ? draftIsToday
+                  ? '（配图没保住，可重新拍一张）'
+                  : '（配图没保住）'
+                : ''}
             </span>
             <button type="button" className="draft-clear" onClick={clearDraft}>
               清掉

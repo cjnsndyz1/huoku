@@ -118,7 +118,7 @@ export default function VoicePromptModal({ entry, onClose }: Props) {
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
-                resize: 'vertical',
+                resize: 'none', // 预览框禁手动拉高：防桌面拉伸超出小屏弹窗滚动区设计
                 padding: '10px 12px',
                 fontSize: '13px',
                 lineHeight: 1.6,
@@ -148,7 +148,7 @@ export default function VoicePromptModal({ entry, onClose }: Props) {
           </button>
           {manual && (
             <p style={{ margin: '8px 0 0', fontSize: '12px', lineHeight: 1.5, color: 'var(--ink-faint)' }}>
-              自动复制没成功：请在上方文本框全选（Ctrl+A）后手动复制（Ctrl+C），再粘贴到语音产品。
+              自动复制没成功：请在预览框里全选文字后复制（电脑 Ctrl+A / 手机长按全选），再粘贴到语音产品。
             </p>
           )}
         </div>

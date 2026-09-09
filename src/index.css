@@ -146,6 +146,49 @@ input:focus-visible {
   color: var(--ink-faint);
 }
 
+/* 注册首登欢迎条（一次性）：说明新账号空货库正常，防「数据丢了」恐慌 */
+.welcome-note {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  max-width: 420px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  margin: 0 auto 16px;
+  padding: 12px 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 14px;
+  color: var(--accent-strong);
+  line-height: 1.6;
+}
+
+.welcome-note small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+
+.welcome-close {
+  border: none;
+  background: none;
+  padding: 3px;
+  margin: 2px 0 0;
+  color: var(--accent-strong);
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.welcome-close:hover {
+  color: var(--ink);
+}
+
 .total-count {
   font-size: 13px;
   color: var(--ink-faint);
@@ -689,6 +732,15 @@ textarea::placeholder {
   color: var(--accent);
 }
 
+/* 设置页操作反馈分色：默认(ok)=墨绿；err=朱砂；info=中性 */
+.msg-err {
+  color: var(--cinnabar);
+}
+
+.msg-info {
+  color: var(--ink-muted);
+}
+
 /* ============ 拍照录入 ============ */
 .photo-area {
   display: flex;
@@ -1137,11 +1189,16 @@ textarea::placeholder {
   justify-content: center;
   padding: 24px;
   z-index: 100;
+  /* 移动端：滚动链条止步于遮罩，不穿透滚到背后的页面 */
+  overscroll-behavior: contain;
 }
 
 .modal {
   width: 100%;
   max-width: 380px;
+  /* 矮屏/超长 snippet 兜底：内容超高时弹窗内部滚动，按钮区不跑出屏幕 */
+  max-height: min(480px, 80vh);
+  overflow-y: auto;
   background: var(--paper-light);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
@@ -1269,6 +1326,22 @@ textarea::placeholder {
   color: var(--accent-strong);
 }
 
+.draft-note > span {
+  flex: 1;
+  line-height: 1.5;
+}
+
+/* 跨天草稿（B1）：昨天/更早的残稿若直接保存会被记成「今天」，用朱砂警示区分 */
+.draft-note-stale {
+  background: var(--cinnabar-soft);
+  border-color: var(--cinnabar);
+  color: var(--cinnabar);
+}
+
+.draft-note-stale .draft-clear {
+  color: var(--cinnabar);
+}
+
 .draft-clear {
   border: none;
   background: none;
@@ -1376,14 +1449,45 @@ textarea::placeholder {
   overflow-y: auto;
 }
 
-.ship-log {
+/* 对话中：会话区统一滚动容器（flex:1 + minHeight:0），保证任何屏高下输入区与底部按钮固定可见 */
+.ship-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  padding: 2px 20px 12px;
+}
+
+.ship-ctx {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 0 4px;
+  border-bottom: 1px dashed var(--line);
+  margin-bottom: 10px;
+}
+
+.ship-ctx-role {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.ship-ctx-entry {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+
+.ship-log {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  padding: 8px 20px 12px;
-  min-height: 140px;
+  min-height: 0;
 }
 
 .ship-msg {

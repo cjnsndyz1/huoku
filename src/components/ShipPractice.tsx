@@ -84,12 +84,15 @@ export default function ShipPractice({ entry, onClose }: Props) {
   }, [history])
 
   useEffect(() => {
+    // 内嵌 VoicePromptModal 打开时，Esc 交给子弹窗自己处理——两层 window 监听都在会一起触发，
+    // 把语音弹窗和出货练习同时关掉，练到一半的对话全没
+    if (voiceOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, voiceOpen])
 
   // 场景选择与货预览：未开始时放进可滚动区（长货下「开始」按钮仍常驻底部），开始后固定在顶部
   const preBlock = (
@@ -145,25 +148,31 @@ export default function ShipPractice({ entry, onClose }: Props) {
           </>
         ) : (
           <>
-            {preBlock}
-
-            {history.length > 0 && (
-              <div className="ship-log">
-                {history.map((m, i) => (
-                  <div key={i} className={`ship-msg ${m.role === 'assistant' ? 'ship-msg-ai' : 'ship-msg-me'}`}>
-                    <span className="ship-msg-role">{m.role === 'assistant' ? scenario.role : '我'}</span>
-                    <p className="ship-msg-text">{m.content}</p>
-                  </div>
-                ))}
-                {loading && (
-                  <div className="ship-msg ship-msg-ai">
-                    <span className="ship-msg-role">{scenario.role}</span>
-                    <p className="ship-msg-text ship-msg-dots">…</p>
-                  </div>
-                )}
-                <div ref={bottomRef} />
+            {/* 对话中：整个会话区统一滚动（flex:1 + minHeight:0），场景身份与消息都滚，输入区永远固定不裁切 */}
+            <div className="ship-body">
+              <div className="ship-ctx">
+                <span className="ship-ctx-role">向「{scenario.role}」说</span>
+                <p className="ship-ctx-entry">{entry.judgment || entry.thought || entry.happened}</p>
               </div>
-            )}
+
+              {history.length > 0 && (
+                <div className="ship-log">
+                  {history.map((m, i) => (
+                    <div key={i} className={`ship-msg ${m.role === 'assistant' ? 'ship-msg-ai' : 'ship-msg-me'}`}>
+                      <span className="ship-msg-role">{m.role === 'assistant' ? scenario.role : '我'}</span>
+                      <p className="ship-msg-text">{m.content}</p>
+                    </div>
+                  ))}
+                  {loading && (
+                    <div className="ship-msg ship-msg-ai">
+                      <span className="ship-msg-role">{scenario.role}</span>
+                      <p className="ship-msg-text ship-msg-dots">…</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
 
             {err && <p className="coach-error">{err}</p>}
 

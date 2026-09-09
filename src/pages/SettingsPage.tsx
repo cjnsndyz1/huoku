@@ -8,7 +8,16 @@ import {
   testApiConfig,
 } from '../services/coachService'
 import { loadAiSettings, saveAiSettings } from '../services/aiSettingsService'
-import { isLoggedIn, signIn, signOut, signUp } from '../services/supabase'
+import { isLoggedIn, signIn, signOut, signUp, authErrorText } from '../services/supabase'
+
+/** 给认证请求加超时：supabase.co 网络挂起时若没有超时，busy 会永久卡死、按钮全部失灵（"点了没反应"） */
+function withTimeout<T>(p: Promise<T>, ms = 20000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('连接超时，请检查网络后重试')), ms)
+  })
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
+}
 
 export default function SettingsPage() {
   // AI 配置
@@ -22,9 +31,11 @@ export default function SettingsPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loggedIn, setLoggedIn] = useState(false)
-  const [busy, setBusy] = useState(false)
 
-  const [msg, setMsg] = useState('')
+  // 操作结果消息：ok=墨绿 / err=朱砂 / info=中性，避免「失败也显成功绿」误导
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err' | 'info'; text: string } | null>(null)
+  // 当前进行中的认证动作：驱动按钮忙碌文案（登录中…/注册中…），避免请求挂起时「点了没反应」
+  const [action, setAction] = useState<'login' | 'signup' | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -54,39 +65,53 @@ export default function SettingsPage() {
   }
 
   const doLogin = async () => {
-    setBusy(true)
-    setMsg('')
+    setAction('login')
+    setMsg(null)
     try {
-      await signIn(email.trim(), password)
+      await withTimeout(signIn(email.trim(), password))
       setLoggedIn(true)
-      setMsg('登录成功')
+      setMsg({ kind: 'ok', text: '登录成功' })
       await syncAiFromCloud()
     } catch (e) {
-      setMsg(`登录失败：${e instanceof Error ? e.message : '请检查邮箱密码'}`)
+      setMsg({ kind: 'err', text: authErrorText(e) })
     } finally {
-      setBusy(false)
+      setAction(null)
     }
   }
 
   const doSignup = async () => {
-    setBusy(true)
-    setMsg('')
+    setAction('signup')
+    setMsg(null)
     try {
-      await signUp(email.trim(), password)
-      setLoggedIn(true)
-      setMsg('注册成功，已登录')
-      await syncAiFromCloud()
+      const status = await withTimeout(signUp(email.trim(), password))
+      if (status === 'confirmed') {
+        setLoggedIn(true)
+        // 新账号首登标记：首页显示一次性欢迎条，说明空货库是正常的（避免误以为数据丢了）
+        try {
+          localStorage.setItem('biaodaxunlian:just-registered', '1')
+        } catch {
+          /* 忽略 */
+        }
+        setMsg({ kind: 'ok', text: '注册成功，已登录' })
+        await syncAiFromCloud()
+      } else {
+        // 开了邮箱验证：注册已成功但没自动登录，去收邮件验证
+        setMsg({
+          kind: 'info',
+          text: '注册成功！请查收邮箱里的验证邮件，点开链接完成验证，再回来登录',
+        })
+      }
     } catch (e) {
-      setMsg(`注册失败：${e instanceof Error ? e.message : '请检查邮箱密码'}`)
+      setMsg({ kind: 'err', text: authErrorText(e) })
     } finally {
-      setBusy(false)
+      setAction(null)
     }
   }
 
   const doLogout = async () => {
     await signOut()
     setLoggedIn(false)
-    setMsg('已退出登录')
+    setMsg({ kind: 'ok', text: '已退出登录' })
   }
 
   const saveAi = async () => {
@@ -98,17 +123,18 @@ export default function SettingsPage() {
     saveApiConfig(cfg) // 本地缓存
     try {
       await saveAiSettings(cfg) // 同步云端
-      setMsg('AI 配置已保存并同步到云端')
+      setMsg({ kind: 'ok', text: 'AI 配置已保存并同步到云端' })
     } catch {
-      setMsg('AI 配置已保存到本地（云端同步失败，请先登录）')
+      setMsg({ kind: 'info', text: 'AI 配置已保存到本地（云端同步失败，请先登录）' })
     }
   }
 
   const testAi = async () => {
     setTesting(true)
-    setMsg('')
+    setMsg(null)
     const result = await testApiConfig({ baseUrl, apiKey, model })
-    setMsg(result)
+    // 连接成功是确认态；其余（Key 无效/填错/网络）都是需要动手修的提醒
+    setMsg(result === '连接成功' ? { kind: 'ok', text: result } : { kind: 'err', text: result })
     setTesting(false)
   }
 
@@ -154,11 +180,21 @@ export default function SettingsPage() {
                 />
               </label>
               <div className="settings-actions">
-                <button type="button" className="btn btn-primary" onClick={doLogin} disabled={busy}>
-                  <LogIn size={16} /> 登录
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={doLogin}
+                  disabled={action !== null}
+                >
+                  <LogIn size={16} /> {action === 'login' ? '登录中…' : '登录'}
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={doSignup} disabled={busy}>
-                  注册
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={doSignup}
+                  disabled={action !== null}
+                >
+                  {action === 'signup' ? '注册中…' : '注册'}
                 </button>
               </div>
             </>
@@ -237,7 +273,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {msg && <p className="backup-msg">{msg}</p>}
+      {msg && <p className={`backup-msg msg-${msg.kind}`}>{msg.text}</p>}
     </div>
   )
 }

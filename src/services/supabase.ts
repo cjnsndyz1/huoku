@@ -22,12 +22,27 @@ export async function signIn(email: string, password: string): Promise<void> {
   if (error) throw error
 }
 
-export async function signUp(email: string, password: string): Promise<void> {
+/** 注册结果：confirmed=已自动登录；verify-email=需先验证邮箱（取决于项目邮箱确认开关） */
+export type SignUpResult = 'confirmed' | 'verify-email'
+
+export async function signUp(email: string, password: string): Promise<SignUpResult> {
   const { data, error } = await getClient().auth.signUp({ email, password })
   if (error) throw error
-  if (!data.session) {
-    throw new Error('注册成功，请查收邮箱完成验证后，再回到这里登录')
-  }
+  // 开了邮箱验证时 data.session 为空——这不是失败，是「注册成功、待验证」
+  return data.session ? 'confirmed' : 'verify-email'
+}
+
+/** 把 Supabase 认证错误翻译成用户看得懂的中文；认不出的错误回退原文 */
+export function authErrorText(e: unknown): string {
+  const msg = e instanceof Error ? e.message : ''
+  if (/invalid login credentials/i.test(msg)) return '邮箱或密码不对，请检查后重试'
+  if (/email not confirmed/i.test(msg)) return '邮箱还没验证：请查收验证邮件并点开链接，再回来登录'
+  if (/already registered/i.test(msg)) return '这个邮箱已注册过，直接登录即可'
+  if (/at least \d+ characters/i.test(msg)) return '密码太短，至少需要 6 位'
+  if (/invalid format|invalid email|not a valid email/i.test(msg)) return '邮箱格式不对，请检查后重试'
+  if (/rate limit|too many requests/i.test(msg)) return '操作太频繁，请稍等一分钟再试'
+  if (/network|fetch|load failed/i.test(msg)) return '连不上服务器，请检查网络后重试'
+  return msg || '操作失败，请稍后再试'
 }
 
 export async function signOut(): Promise<void> {
